@@ -1,0 +1,2583 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="A layer-based image editor with portrait retouching that runs entirely in your browser.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231a1c20'/%3E%3Cpath d='M6 22l6-8 4 5 3-3.5L26 22z' fill='%23e0894a'/%3E%3Ccircle cx='21' cy='10' r='3' fill='%23e9e8e4'/%3E%3C/svg%3E">
+<title>Raster Editor</title>
+<style>
+@font-face{font-family:'Archivo';font-style:normal;font-weight:400;font-display:swap;src:url('vendor/fonts/archivo-latin-400-normal.woff2') format('woff2')}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:500;font-display:swap;src:url('vendor/fonts/archivo-latin-500-normal.woff2') format('woff2')}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:600;font-display:swap;src:url('vendor/fonts/archivo-latin-600-normal.woff2') format('woff2')}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:700;font-display:swap;src:url('vendor/fonts/archivo-latin-700-normal.woff2') format('woff2')}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;src:url('vendor/fonts/ibm-plex-mono-latin-400-normal.woff2') format('woff2')}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;src:url('vendor/fonts/ibm-plex-mono-latin-500-normal.woff2') format('woff2')}
+@font-face{font-family:'Playfair Display';font-style:normal;font-weight:700;font-display:swap;src:url('vendor/fonts/playfair-display-latin-700-normal.woff2') format('woff2')}
+@font-face{font-family:'Playfair Display';font-style:italic;font-weight:700;font-display:swap;src:url('vendor/fonts/playfair-display-latin-700-italic.woff2') format('woff2')}
+</style>
+<style>
+/* --- baseline reset (the hosted build inherits this from its container) --- */
+html{color-scheme:light}
+body{margin:0;font:14px system-ui,sans-serif}
+img{max-width:100%}
+[hidden]{display:none!important}
+
+/* Tool rail left, canvas centre, inspector right; one scrolling column on
+   phones. Dark only, because a light UI biases how you judge an image. */
+:root{
+  --bg:#121316;
+  --stage:#0d0e10;
+  --panel:#1a1c20;
+  --panel-2:#212429;
+  --raised:#2a2d33;
+  --line:#32363d;
+  --line-soft:#26292f;
+  --fg:#e9e8e4;
+  --dim:#969ba3;
+  --accent:#e0894a;
+  --accent-ink:#1b1206;
+  --sel:#6aa9ff;
+  --warn:#d9674f;
+  --ok:#7fb58c;
+  --font-ui:'Archivo','Helvetica Neue',Arial,sans-serif;
+  --font-data:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --r:7px;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-ui);font-size:13px;overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+.app{height:100%;display:grid;grid-template-rows:auto 1fr;min-height:0}
+
+/* Top bar */
+.topbar{display:flex;align-items:center;gap:14px;padding:8px 12px;padding-top:calc(8px + env(safe-area-inset-top,0px));
+  background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:thin}
+.brand{display:flex;align-items:baseline;gap:8px;flex:0 0 auto;padding-right:6px}
+.brand b{font-weight:700;letter-spacing:-.015em;font-size:15px}
+.brand span{font-family:var(--font-data);font-size:10.5px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase}
+.bargroup{display:flex;align-items:center;gap:4px;flex:0 0 auto;padding-left:14px;border-left:1px solid var(--line-soft)}
+.bargroup>.glabel{font-family:var(--font-data);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-right:4px}
+.btn{display:inline-flex;align-items:center;gap:6px;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:var(--r);padding:6px 9px;cursor:pointer;white-space:nowrap;line-height:1}
+.btn:hover{background:var(--raised);border-color:#3e434b}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.sm{padding:5px 7px;font-size:12px}
+.btn svg{width:15px;height:15px;flex:0 0 auto}
+
+/* Body */
+.body{display:grid;grid-template-columns:52px minmax(0,1fr) 300px;min-height:0}
+@media (max-width:1100px){.body{grid-template-columns:48px minmax(0,1fr) 268px}}
+
+/* Tool rail */
+.rail{background:var(--panel);border-right:1px solid var(--line);padding:8px 0;display:flex;flex-direction:column;
+  align-items:center;gap:4px;overflow-y:auto}
+.tool{width:38px;height:38px;display:grid;place-items:center;background:transparent;border:1px solid transparent;
+  border-radius:var(--r);cursor:pointer;color:var(--dim);position:relative}
+.tool svg{width:19px;height:19px}
+.tool:hover{background:var(--panel-2);color:var(--fg)}
+.tool[aria-pressed="true"]{background:var(--raised);color:var(--accent);border-color:#3f444c}
+.tool .key{position:absolute;right:3px;bottom:1px;font-family:var(--font-data);font-size:8.5px;color:#6d737b}
+.railsep{width:24px;height:1px;background:var(--line);margin:5px 0}
+.colorrow{display:flex;align-items:center;gap:8px;padding:0 13px 12px}
+.colorrow .colorlbl{font-size:11px;color:var(--dim);min-width:0}
+.colorrow .swatch{background:var(--accent)}
+.colorrow .swatch.alt{background:#141518}
+.colorrow #cSwap{flex:0 0 auto}
+.swatch{width:30px;height:30px;border-radius:var(--r);border:1px solid var(--line);padding:0;cursor:pointer;overflow:hidden}
+.swatch input{opacity:0;width:100%;height:100%;cursor:pointer;display:block}
+
+/* Stage */
+.stagewrap{display:grid;grid-template-rows:1fr auto;min-width:0;min-height:0;background:var(--stage)}
+.stage{position:relative;min-height:0;overflow:hidden;touch-action:none;overscroll-behavior:contain}
+#view{display:block;width:100%;height:100%;cursor:crosshair}
+.stagehint{position:absolute;left:50%;top:14px;transform:translateX(-50%);background:#000a;border:1px solid var(--line);
+  border-radius:99px;padding:5px 12px;font-size:11.5px;color:var(--dim);pointer-events:none;transition:opacity .4s}
+.statusbar{display:flex;align-items:center;gap:16px;padding:6px 12px;border-top:1px solid var(--line);background:var(--panel);
+  font-family:var(--font-data);font-size:11px;color:var(--dim);overflow-x:auto;white-space:nowrap}
+.statusbar b{color:var(--fg);font-weight:500}
+.zoomctl{display:flex;align-items:center;gap:4px;margin-left:auto}
+.zoomctl button{width:24px;height:22px;display:grid;place-items:center;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:5px;cursor:pointer;font-family:var(--font-data);line-height:1}
+
+/* Inspector */
+.inspector{background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;min-width:0}
+.sect{border-bottom:1px solid var(--line-soft)}
+.secthead{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;background:none;border:0;
+  padding:11px 13px;cursor:pointer;text-align:left}
+.secthead h2{margin:0;font-size:11px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--dim)}
+.secthead .chev{transition:transform .18s;color:#656a72}
+.sect[data-open="false"] .chev{transform:rotate(-90deg)}
+.sect[data-open="false"] .sectbody{display:none}
+.sectbody{padding:0 13px 14px;display:flex;flex-direction:column;gap:11px}
+
+.row{display:flex;align-items:center;gap:8px}
+.row.wrap{flex-wrap:wrap}
+.field{display:grid;grid-template-columns:62px minmax(0,1fr);align-items:center;gap:9px}
+.field>label{font-size:11.5px;color:var(--dim)}
+.field .val{font-family:var(--font-data);font-size:11px;color:var(--fg);min-width:38px;text-align:right;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent);min-width:0}
+input[type=text],input[type=number],select,textarea{width:100%;min-width:0;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:6px;padding:6px 7px;font-family:var(--font-data);font-size:12px}
+textarea{resize:vertical;min-height:54px;font-family:var(--font-ui)}
+.seg{display:flex;gap:3px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);padding:3px;flex-wrap:wrap}
+.seg button{flex:1 1 auto;min-width:40px;background:none;border:0;border-radius:5px;padding:5px 6px;cursor:pointer;color:var(--dim);font-size:11.5px}
+.seg button[aria-pressed="true"]{background:var(--raised);color:var(--fg)}
+.hint{font-size:11px;color:var(--dim);line-height:1.45;margin:0}
+.hint.warn{color:var(--accent)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+
+/* Layers */
+.layerlist{display:flex;flex-direction:column;gap:5px}
+.layer{display:grid;grid-template-columns:22px 34px minmax(0,1fr) auto;align-items:center;gap:8px;padding:6px;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);cursor:pointer}
+.layer[aria-selected="true"]{border-color:var(--accent);background:#2a2119}
+.layer .eye{background:none;border:0;padding:0;cursor:pointer;color:var(--dim);display:grid;place-items:center}
+.layer[data-vis="false"]{opacity:.5}
+.layer .thumb{width:34px;height:26px;border-radius:4px;border:1px solid var(--line);background-size:12px 12px;
+  background-position:0 0,6px 6px;background-color:#1a1c20;
+  background-image:linear-gradient(45deg,#2a2d33 25%,transparent 25%,transparent 75%,#2a2d33 75%),linear-gradient(45deg,#2a2d33 25%,transparent 25%,transparent 75%,#2a2d33 75%)}
+.layer .thumb canvas,.layer .thumb img{width:100%;height:100%;object-fit:contain;display:block}
+.layer .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px}
+.layer .meta{font-family:var(--font-data);font-size:10px;color:var(--dim);text-align:right}
+.layer input.rename{width:100%;padding:2px 4px;font-size:12px;font-family:var(--font-ui)}
+
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(10px);background:var(--raised);
+  border:1px solid var(--line);border-radius:99px;padding:8px 16px;font-size:12.5px;opacity:0;pointer-events:none;
+  transition:opacity .2s,transform .2s;z-index:50;max-width:min(92vw,420px);text-align:center}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+.filedrop{position:absolute;inset:0;display:grid;place-items:center;background:#0d0e10e0;border:2px dashed var(--accent);
+  font-size:15px;color:var(--fg);z-index:5}
+
+@media (max-width:760px){
+  .body{grid-template-columns:1fr;grid-template-rows:auto minmax(280px,52vh) 1fr;overflow-y:auto}
+  /* On a phone the toolbar wraps so no button hides off-screen; above that it
+     stays a single row and the canvas sits right under it. */
+  .topbar{flex-wrap:wrap;gap:6px 8px;overflow-x:visible;padding:6px 10px}
+  .brand span{display:none}
+  .lbl,.glabel{display:none}
+  .bargroup{padding-left:0;border-left:0;flex-wrap:wrap;min-width:0;flex:0 1 auto;max-width:100%}
+  .bargroup:not(:first-child){padding-left:10px;border-left:1px solid var(--line-soft)}
+  .topbar .bargroup:last-child{margin-left:0}
+  .rail{flex-direction:row;border-right:0;border-bottom:1px solid var(--line);padding:6px 8px;overflow-x:auto;justify-content:flex-start}
+  .railsep{width:1px;height:24px;margin:0 4px}
+  .inspector{border-left:0;border-top:1px solid var(--line);overflow:visible}
+  .stagewrap{min-height:260px}
+}
+/* Touch targets: padding alone leaves these near 32px, so set a height. */
+@media (pointer:coarse){
+  .btn,.btn.sm{min-height:44px;padding:10px 13px}
+  .tool{width:46px;height:46px}
+  .tool svg{width:21px;height:21px}
+  .seg button{min-height:44px;padding:10px 8px;min-width:54px}
+  .secthead{padding:15px 13px;min-height:50px}
+  .layer{padding:10px;grid-template-columns:34px 34px minmax(0,1fr) auto}
+  .layer .eye{min-width:34px;min-height:34px}
+  .zoomctl button{min-width:38px;min-height:38px}
+  #cSwap{min-width:44px;min-height:40px}
+  input[type=range]{height:34px}
+  input[type=text],input[type=number],select{min-height:44px}
+  .swatch{width:44px;height:44px}
+  .field{grid-template-columns:70px minmax(0,1fr)}
+}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important}}
+</style>
+</head>
+<body>
+
+<svg hidden aria-hidden="true" style="position:absolute">
+  <defs>
+    <g id="i-move"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></g>
+    <g id="i-brush"><path d="M15.5 4.5l4 4L9 19l-5 1 1-5z"/><path d="M13.5 6.5l4 4"/></g>
+    <g id="i-eraser"><path d="M8 20h12"/><path d="M14.5 4.5l5 5-8 8-5-5z"/><path d="M9.5 17.5L4.5 12.5"/></g>
+    <g id="i-fill"><path d="M5 11l7-7 7 7-7 7z"/><path d="M19 15c1.2 1.6 2 2.7 2 3.6a2 2 0 11-4 0c0-.9.8-2 2-3.6z"/></g>
+    <g id="i-shape"><rect x="3.5" y="5.5" width="11" height="9" rx="1"/><circle cx="15.5" cy="15" r="5"/></g>
+    <g id="i-text"><path d="M5 6h14M12 6v13M9 19h6"/></g>
+    <g id="i-pick"><path d="M18.5 3.5l2 2-9 9-3 1 1-3z"/><path d="M8.5 12.5l-4 4a2.1 2.1 0 103 3l4-4"/></g>
+    <g id="i-select"><path d="M4 8V5h3M20 8V5h-3M4 16v3h3M20 16v3h-3M10 5h4M10 19h4M4 10v4M20 10v4"/></g>
+    <g id="i-hand"><path d="M9 11V5.5a1.5 1.5 0 013 0V11m0-1V4.5a1.5 1.5 0 013 0V11m0-.5a1.5 1.5 0 013 0V15a6 6 0 01-6 6h-1a6 6 0 01-6-6v-3.5a1.5 1.5 0 013 0V13"/></g>
+    <g id="i-eye"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="2.6"/></g>
+    <g id="i-eyeoff"><path d="M4 4l16 16"/><path d="M9.5 6.4A9.8 9.8 0 0112 6c6.4 0 10 6 10 6a17 17 0 01-3.3 3.8M6.3 8.3A17 17 0 002 12s3.6 6 10 6a9.9 9.9 0 003.4-.6"/></g>
+    <g id="i-undo"><path d="M4 9h11a5 5 0 010 10h-6"/><path d="M8 5L4 9l4 4"/></g>
+    <g id="i-redo"><path d="M20 9H9a5 5 0 000 10h6"/><path d="M16 5l4 4-4 4"/></g>
+    <g id="i-plus"><path d="M12 5v14M5 12h14"/></g>
+    <g id="i-trash"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></g>
+    <g id="i-copy"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></g>
+    <g id="i-merge"><path d="M12 3v10M8 9l4 4 4-4"/><path d="M4 18h16"/></g>
+    <g id="i-up"><path d="M12 19V5M6 11l6-6 6 6"/></g>
+    <g id="i-down"><path d="M12 5v14M6 13l6 6 6-6"/></g>
+    <g id="i-chev"><path d="M6 9l6 6 6-6"/></g>
+    <g id="i-img"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M4 17l5-5 4 4 3-2 4 4"/></g>
+    <g id="i-save"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></g>
+    <g id="i-crop"><path d="M6 2v16h16"/><path d="M2 6h16v16"/></g>
+    <g id="i-new"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/></g>
+    <g id="i-heal"><path d="M4.4 9.6l5.2-5.2a2 2 0 012.8 0l7.2 7.2a2 2 0 010 2.8l-5.2 5.2a2 2 0 01-2.8 0L4.4 12.4a2 2 0 010-2.8z"/><path d="M12 8.6v6.8M8.6 12h6.8"/></g>
+    <g id="i-smooth"><path d="M3 14.5c3 0 3-5 6-5s3 5 6 5 3-5 6-5"/><path d="M3 19h18"/></g>
+    <g id="i-clone"><rect x="3.5" y="3.5" width="10" height="10" rx="2"/><rect x="10.5" y="10.5" width="10" height="10" rx="2"/></g>
+    <g id="i-fliph"><path d="M12 3v18"/><path d="M9 7L4 12l5 5z"/><path d="M15 7l5 5-5 5z"/></g>
+    <g id="i-flipv"><path d="M3 12h18"/><path d="M7 9l5-5 5 5z"/><path d="M7 15l5 5 5-5z"/></g>
+    <g id="i-rot"><path d="M20 12a8 8 0 11-2.3-5.6"/><path d="M20 4v5h-5"/></g>
+    <g id="i-trim"><rect x="3.5" y="3.5" width="17" height="17" rx="1.5" stroke-dasharray="3 2.5"/><rect x="7.5" y="7.5" width="9" height="9" rx="1"/></g>
+    <g id="i-cut"><path d="M4 4l16 16M20 4L4 20" stroke-dasharray="3 2.5"/><circle cx="12" cy="12" r="4.2"/></g>
+    <g id="i-face"><circle cx="12" cy="12" r="9"/><path d="M9 10.2h.02M15 10.2h.02"/><path d="M8.8 14.8c.95.9 2 1.35 3.2 1.35s2.25-.45 3.2-1.35"/></g>
+  </defs>
+</svg>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><b>Raster Editor</b><span>layers · retouch · save</span></div>
+
+    <div class="bargroup">
+      <button class="btn sm" id="btnNew" title="New document"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-new"/></svg><span class="lbl">New</span></button>
+      <button class="btn sm" id="btnOpen" title="Place an image (or drag one onto the canvas)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-img"/></svg>Place image</button>
+      <input type="file" id="fileIn" accept="image/*,.heic,.heif" multiple hidden>
+    </div>
+
+    <div class="bargroup">
+      <button class="btn sm" id="btnUndo" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-undo"/></svg></button>
+      <button class="btn sm" id="btnRedo" title="Redo (Ctrl+Shift+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-redo"/></svg></button>
+    </div>
+
+    <div class="bargroup">
+      <span class="glabel">Image</span>
+      <button class="btn sm" data-img="flipH" title="Flip horizontal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-fliph"/></svg><span class="lbl">Flip H</span></button>
+      <button class="btn sm" data-img="flipV" title="Flip vertical"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-flipv"/></svg><span class="lbl">Flip V</span></button>
+      <button class="btn sm" data-img="rotCW" title="Rotate 90° clockwise"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-rot"/></svg><span class="lbl">Rotate 90°</span></button>
+      <button class="btn sm" id="btnCrop" title="Crop to selection"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-crop"/></svg><span class="lbl">Crop</span></button>
+      <button class="btn sm" id="btnTrim" title="Trim transparent edges"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-trim"/></svg><span class="lbl">Trim</span></button>
+    </div>
+
+    <div class="bargroup">
+      <button class="btn sm" id="btnCut" title="Erase the background of this layer, keeping the subject"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-cut"/></svg>Delete background</button>
+    </div>
+
+    <div class="bargroup" style="margin-left:auto">
+      <button class="btn primary sm" id="btnExport"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-save"/></svg>Save</button>
+    </div>
+  </header>
+
+  <div class="body">
+    <nav class="rail" id="rail" aria-label="Tools"></nav>
+
+    <div class="stagewrap">
+      <div class="stage" id="stage">
+        <canvas id="view"></canvas>
+        <div class="stagehint" id="hint"></div>
+        <div class="filedrop" id="drop" hidden>Drop images to place them as layers</div>
+      </div>
+      <div class="statusbar">
+        <span>doc <b id="stDoc">—</b></span>
+        <span>pos <b id="stPos">—</b></span>
+        <span>layer <b id="stLayer">—</b></span>
+        <span id="stSel"></span>
+        <span class="zoomctl">
+          <button id="zOut" title="Zoom out">−</button>
+          <b id="stZoom" style="min-width:48px;text-align:center">100%</b>
+          <button id="zIn" title="Zoom in">+</button>
+          <button id="zFit" title="Fit to window" style="width:auto;padding:0 7px">fit</button>
+          <button id="z100" title="Actual pixels" style="width:auto;padding:0 7px">1:1</button>
+        </span>
+      </div>
+    </div>
+
+    <aside class="inspector" id="inspector">
+      <section class="sect" data-open="true" id="sectTool">
+        <button class="secthead"><h2 id="toolTitle">Brush</h2><svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-chev"/></svg></button>
+        <div class="colorrow">
+          <label class="swatch" title="Foreground colour"><input type="color" id="cFore" value="#e0894a"></label>
+          <label class="swatch alt" title="Background colour"><input type="color" id="cBack" value="#141518"></label>
+          <button class="btn sm" id="cSwap" title="Swap colours (X)">⇄</button>
+          <span class="colorlbl">Foreground / background</span>
+        </div>
+        <div class="sectbody" id="toolBody"></div>
+      </section>
+
+      <section class="sect" data-open="true">
+        <button class="secthead"><h2>Layers</h2><svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-chev"/></svg></button>
+        <div class="sectbody">
+          <div class="row">
+            <button class="btn sm" id="lAdd" title="New layer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-plus"/></svg></button>
+            <button class="btn sm" id="lDup" title="Duplicate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-copy"/></svg></button>
+            <button class="btn sm" id="lUp" title="Raise"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-up"/></svg></button>
+            <button class="btn sm" id="lDown" title="Lower"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-down"/></svg></button>
+            <button class="btn sm" id="lMerge" title="Merge down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-merge"/></svg></button>
+            <button class="btn sm" id="lDel" title="Delete layer" style="margin-left:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-trash"/></svg></button>
+          </div>
+          <div class="field"><label for="lOpacity">Opacity</label>
+            <div class="row"><input type="range" id="lOpacity" min="0" max="100" value="100"><span class="val" id="lOpacityV">100%</span></div></div>
+          <div class="field"><label for="lBlend">Blend</label>
+            <select id="lBlend">
+              <option>normal</option><option>multiply</option><option>screen</option><option>overlay</option>
+              <option>darken</option><option>lighten</option><option>color-dodge</option><option>color-burn</option>
+              <option>hard-light</option><option>soft-light</option><option>difference</option><option>exclusion</option>
+              <option>hue</option><option>saturation</option><option>color</option><option>luminosity</option>
+            </select></div>
+          <div class="layerlist" id="layerList"></div>
+          <p class="hint">Double-click a layer name to rename it.</p>
+        </div>
+      </section>
+
+      <section class="sect" data-open="true" id="sectFace">
+        <button class="secthead"><h2>Face guide</h2><svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-chev"/></svg></button>
+        <div class="sectbody">
+          <div class="row">
+            <button class="btn sm primary" id="fToggle">Show guide</button>
+            <button class="btn sm" id="fAuto" title="Place the box over the largest skin-coloured area">Auto-fit</button>
+            <button class="btn sm" id="fReset" title="Put the marks back at standard face proportions">Reset marks</button>
+          </div>
+          <p class="hint" id="fHelp">Drag the corners to fit the box to the face, then drag the four marks onto the eyes, nose and mouth. Everything below works from where you put them.</p>
+          <div class="seg" id="fLimit" role="group" aria-label="Where retouching applies">
+            <button data-v="1" aria-pressed="true">Inside the face only</button>
+            <button data-v="0" aria-pressed="false">Anywhere</button>
+          </div>
+          <div class="seg" id="fProtect" role="group" aria-label="Feature protection">
+            <button data-v="1" aria-pressed="true">Protect eyes &amp; mouth</button>
+            <button data-v="0" aria-pressed="false">No protection</button>
+          </div>
+          <div class="field"><label for="mEyeL">Left eye</label><div class="row"><input type="range" id="mEyeL" min="25" max="400" value="100"><span class="val" id="mEyeLV">100%</span></div></div>
+          <div class="field"><label for="mEyeR">Right eye</label><div class="row"><input type="range" id="mEyeR" min="25" max="400" value="100"><span class="val" id="mEyeRV">100%</span></div></div>
+          <div class="field"><label for="mNose">Nose</label><div class="row"><input type="range" id="mNose" min="25" max="400" value="100"><span class="val" id="mNoseV">100%</span></div></div>
+          <div class="field"><label for="mMouth">Mouth</label><div class="row"><input type="range" id="mMouth" min="25" max="400" value="100"><span class="val" id="mMouthV">100%</span></div></div>
+          <p class="hint">Each mark sizes on its own, by slider or by dragging its green square. The white diamond moves all four together; they stay inside the rectangle.</p>
+          <p class="hint" style="margin-top:2px">Retouch one area at a time — each button runs heal strokes across that zone at the Retouch brush's current strength.</p>
+          <div class="grid2">
+            <button class="btn sm" data-zone="forehead">Forehead</button>
+            <button class="btn sm" data-zone="undereye">Under-eyes</button>
+            <button class="btn sm" data-zone="cheeks">Cheeks</button>
+            <button class="btn sm" data-zone="folds">Nose to mouth</button>
+            <button class="btn sm" data-zone="chin">Chin &amp; jaw</button>
+            <button class="btn sm" data-zone="all">Whole face</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="sect" data-open="true" id="sectPortrait">
+        <button class="secthead"><h2>Portrait retouch</h2><svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-chev"/></svg></button>
+        <div class="sectbody">
+          <p class="hint">Smooths skin across the whole layer while eyes, lips, brows and hair stay sharp. For one wrinkle or blemish at a time, use the Retouch brush (R).</p>
+          <div class="field"><label for="pStr">Smoothing</label><div class="row"><input type="range" id="pStr" min="0" max="100" value="0"><span class="val" id="pStrV">0%</span></div></div>
+          <div class="field"><label for="pRad">Radius</label><div class="row"><input type="range" id="pRad" min="1" max="30" value="6"><span class="val" id="pRadV">6px</span></div></div>
+          <div class="field"><label for="pTex">Keep pores</label><div class="row"><input type="range" id="pTex" min="0" max="100" value="35"><span class="val" id="pTexV">35%</span></div></div>
+          <div class="field"><label for="pEdge">Edge guard</label><div class="row"><input type="range" id="pEdge" min="2" max="60" value="18"><span class="val" id="pEdgeV">18</span></div></div>
+          <div class="seg" id="pSkin" role="group" aria-label="Where to smooth">
+            <button data-s="1" aria-pressed="true">Skin tones only</button>
+            <button data-s="0" aria-pressed="false">Everywhere</button>
+          </div>
+          <p class="hint warn" id="pOff" hidden>Smoothing is at 0%, so Radius, Keep pores and Edge guard have nothing to act on yet.</p>
+          <div class="row">
+            <button class="btn sm primary" id="pApply">Apply</button>
+            <button class="btn sm" id="pReset">Reset</button>
+            <button class="btn sm" id="pPreset" title="A sensible starting point for a portrait">Preset</button>
+          </div>
+          <p class="hint">Radius scales with the face: around 4–8 for a head-and-shoulders shot, higher for a close-up. Keep pores above 25% or skin turns plastic.</p>
+        </div>
+      </section>
+
+      <section class="sect" data-open="true">
+        <button class="secthead"><h2>Adjustments</h2><svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-chev"/></svg></button>
+        <div class="sectbody">
+          <p class="hint" id="adjTarget">Live preview on the active layer. Apply bakes it in; Reset discards it.</p>
+          <div class="field"><label for="aBright">Brightness</label><div class="row"><input type="range" id="aBright" min="0" max="250" value="100"><span class="val" id="aBrightV">100</span></div></div>
+          <div class="field"><label for="aContrast">Contrast</label><div class="row"><input type="range" id="aContrast" min="0" max="250" value="100"><span class="val" id="aContrastV">100</span></div></div>
+          <div class="field"><label for="aSat">Saturation</label><div class="row"><input type="range" id="aSat" min="0" max="300" value="100"><span class="val" id="aSatV">100</span></div></div>
+          <div class="field"><label for="aHue">Hue</label><div class="row"><input type="range" id="aHue" min="-180" max="180" value="0"><span class="val" id="aHueV">0°</span></div></div>
+          <div class="field"><label for="aBlur">Blur</label><div class="row"><input type="range" id="aBlur" min="0" max="40" step="0.5" value="0"><span class="val" id="aBlurV">0px</span></div></div>
+          <div class="field"><label for="aSepia">Sepia</label><div class="row"><input type="range" id="aSepia" min="0" max="100" value="0"><span class="val" id="aSepiaV">0%</span></div></div>
+          <div class="field"><label for="aGray">Grayscale</label><div class="row"><input type="range" id="aGray" min="0" max="100" value="0"><span class="val" id="aGrayV">0%</span></div></div>
+          <div class="field"><label for="aInvert">Invert</label><div class="row"><input type="range" id="aInvert" min="0" max="100" value="0"><span class="val" id="aInvertV">0%</span></div></div>
+          <div class="row">
+            <button class="btn sm primary" id="aApply">Apply</button>
+            <button class="btn sm" id="aReset">Reset</button>
+            <button class="btn sm" id="aAuto" title="Stretch levels to full range">Auto levels</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="sect" data-open="false">
+        <button class="secthead"><h2>Document</h2><svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-chev"/></svg></button>
+        <div class="sectbody">
+          <div class="grid2">
+            <div><label class="hint" for="docW">Width</label><input type="number" id="docW" min="1" max="6000"></div>
+            <div><label class="hint" for="docH">Height</label><input type="number" id="docH" min="1" max="6000"></div>
+          </div>
+          <div class="row">
+            <button class="btn sm" id="docResize">Resize canvas</button>
+            <button class="btn sm" id="docScale">Scale image</button>
+          </div>
+          <div class="seg" id="newBg" role="group" aria-label="New document background">
+            <button data-bg="white" aria-pressed="true">White</button>
+            <button data-bg="transparent" aria-pressed="false">Transparent</button>
+            <button data-bg="color" aria-pressed="false">Fill colour</button>
+          </div>
+          <p class="hint">Resize keeps pixels where they are. Scale redraws every layer to the new size.</p>
+          <p class="hint" style="margin-top:4px"><b>When placing an image</b></p>
+          <div class="seg" id="impFresh" role="group" aria-label="Document handling on import">
+            <button data-v="0" aria-pressed="true">Add as a layer</button>
+            <button data-v="1" aria-pressed="false">Replace document</button>
+          </div>
+          <div class="seg" id="impStrip" role="group" aria-label="Background handling on import">
+            <button data-v="0" aria-pressed="true">Keep background</button>
+            <button data-v="1" aria-pressed="false">Strip background</button>
+          </div>
+          <p class="hint"><b>Replace document</b> starts a transparent canvas the size of the photo, so nothing opaque sits behind it. <b>Strip background</b> runs the magic eraser from the edges as the photo lands, at the Eraser panel's tolerance.</p>
+        </div>
+      </section>
+
+      <section class="sect" data-open="false" id="sectExport">
+        <button class="secthead"><h2>Save image</h2><svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-chev"/></svg></button>
+        <div class="sectbody">
+          <div class="field"><label for="exName">File</label><input type="text" id="exName" value="artwork"></div>
+          <div class="seg" id="exFmt" role="group" aria-label="Format"></div>
+          <div class="field" id="exQWrap" hidden><label for="exQ">Quality</label><div class="row"><input type="range" id="exQ" min="30" max="100" value="92"><span class="val" id="exQV">92</span></div></div>
+          <div class="seg" id="exScale" role="group" aria-label="Scale">
+            <button data-s="0.5" aria-pressed="false">0.5×</button>
+            <button data-s="1" aria-pressed="true">1×</button>
+            <button data-s="2" aria-pressed="false">2×</button>
+          </div>
+          <button class="btn primary" id="exGo">Save image</button>
+          <p class="hint" id="exNote">Exports every visible layer flattened together, at the chosen scale.</p>
+          <p class="hint">Transparency survives in PNG and WebP. JPEG has no alpha channel and fills transparent areas with white. To save a cut-out, erase the background, hide any layer sitting behind the subject, and export PNG — <b>Trim</b> then crops away the empty margin.</p>
+          <p class="hint" id="exHeic"></p>
+        </div>
+      </section>
+
+      <section class="sect" data-open="false">
+        <button class="secthead"><h2>Shortcuts</h2><svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-chev"/></svg></button>
+        <div class="sectbody">
+          <p class="hint" style="font-family:var(--font-data);line-height:1.8">
+            V move · B brush · E eraser · G fill · U shape · T text · R retouch · I picker · M select · H pan<br>
+            [ ] brush size · X swap colours · Ctrl+Z undo · Ctrl+Shift+Z redo<br>
+            Ctrl+A select all · Ctrl+D deselect · Del clear selection · Ctrl+0 fit · Ctrl+V paste image
+          </p>
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+// Raster Editor
+// Copyright 2026 Raster Editor contributors
+// Licensed under the Apache License, Version 2.0. See LICENSE.
+(function(){
+const $ = s => document.querySelector(s);
+const el = (t,a) => Object.assign(document.createElement(t), a||{});
+const clamp = (v,a,b) => v<a?a:v>b?b:v;
+const esc = v => String(v).replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+
+// State
+const doc = { w:960, h:640, layers:[], active:0, name:"artboard" };
+let selection = null;          // {x,y,w,h} in doc pixels
+let scale = 1, ox = 0, oy = 0; // view transform
+let uid = 1;
+
+const state = {
+  tool:"brush",
+  color:"#e0894a", color2:"#141518",
+  brush:{ size:28, hardness:0.75, opacity:1, flow:1 },
+  eraser:{ size:44, hardness:0.6, opacity:1, mode:"brush", tolerance:24, feather:1, contiguous:true },
+  fill:{ tolerance:28, contiguous:true },
+  shape:{ kind:"rect", mode:"fill", width:4, radius:0 },
+  text:{ value:"Raster Editor", family:"Archivo", size:72, weight:700, italic:false, align:"left" },
+  retouch:{ mode:"heal", size:40, strength:0.7, texture:0.5, threshold:16, skinOnly:false, src:null },
+  newBg:"white",
+  import:{ fresh:false, strip:false },
+  exFmt:"png", exScale:1, exQ:0.92
+};
+
+// Canvases
+const view = $("#view"), vctx = view.getContext("2d");
+const stage = $("#stage");
+const flat = el("canvas"), fctx = flat.getContext("2d", {willReadFrequently:false});
+const strokeBuf = el("canvas"), sctx = strokeBuf.getContext("2d");
+const scratch = el("canvas"), xctx = scratch.getContext("2d");
+let dpr = Math.min(window.devicePixelRatio||1, 2);
+
+function sizeBuffers(){
+  for(const c of [flat, strokeBuf, scratch]){ c.width = doc.w; c.height = doc.h; }
+}
+
+const checker = (function(){
+  const c = el("canvas"); c.width = c.height = 16;
+  const x = c.getContext("2d");
+  x.fillStyle = "#2b2e34"; x.fillRect(0,0,16,16);
+  x.fillStyle = "#23262b"; x.fillRect(0,0,8,8); x.fillRect(8,8,8,8);
+  return c;
+})();
+let checkerPat = null;
+
+// Layers
+// Browsers cap canvas area and fail quietly, leaving a blank or zero-sized one.
+function newCanvas(w, h){
+  const c = el("canvas");
+  c.width = w; c.height = h;
+  if(c.width !== w || c.height !== h) throw new Error("this browser cannot make a "+w+"x"+h+" canvas");
+  return c;
+}
+function makeLayer(name){
+  const cv = newCanvas(doc.w, doc.h);
+  return { id:uid++, name:name||("Layer "+uid), cv, ctx:cv.getContext("2d",{willReadFrequently:true}),
+           visible:true, opacity:1, blend:"normal", rev:0, appBg:false };
+}
+const active = () => doc.layers[doc.active];
+const touch = l => { l.rev++; l.appBg = false; flatDirty = true; };
+
+// History
+let hist = [], hpos = -1;
+
+// Each undo step holds a copy of every changed layer, so the step count has to
+// fall as the document grows. 14 steps of a 12-megapixel photo would be ~670MB
+// and would kill a phone tab.
+function histLimit(){
+  const bytes = doc.w * doc.h * 4;
+  return clamp(Math.floor(192e6 / Math.max(1, bytes)), 3, 14);
+}
+
+function snapshot(){
+  const prev = hist[hpos];
+  return {
+    w:doc.w, h:doc.h, active:doc.active, sel: selection && {...selection},
+    layers: doc.layers.map(l => {
+      let keep = null;
+      if(prev) for(const p of prev.layers) if(p.id===l.id && p.rev===l.rev){ keep = p.cv; break; }
+      if(!keep){ const c = el("canvas"); c.width=l.cv.width; c.height=l.cv.height; c.getContext("2d").drawImage(l.cv,0,0); keep=c; }
+      return { id:l.id, name:l.name, visible:l.visible, opacity:l.opacity, blend:l.blend,
+               rev:l.rev, appBg:l.appBg, cv:keep };
+    })
+  };
+}
+function commit(){
+  hist = hist.slice(0, hpos+1);
+  try{
+    hist.push(snapshot());
+  }catch(err){
+    // out of memory while copying layers: keep editing, lose the undo step
+    hist = hist.slice(-1);
+    hpos = hist.length-1; syncHistBtns();
+    toast("Not enough memory for another undo step");
+    return;
+  }
+  const max = histLimit();
+  while(hist.length > max) hist.shift();
+  hpos = hist.length-1;
+  syncHistBtns();
+}
+function restore(s){
+  doc.w = s.w; doc.h = s.h; sizeBuffers();
+  doc.layers = s.layers.map(p => {
+    const cv = el("canvas"); cv.width = s.w; cv.height = s.h;
+    const ctx = cv.getContext("2d",{willReadFrequently:true});
+    ctx.drawImage(p.cv,0,0);
+    return { id:p.id, name:p.name, visible:p.visible, opacity:p.opacity, blend:p.blend,
+            rev:p.rev, appBg:p.appBg, cv, ctx };
+  });
+  doc.active = clamp(s.active, 0, doc.layers.length-1);
+  selection = s.sel ? {...s.sel} : null;
+  dropPreview();
+  flatDirty = true; renderLayers(); syncDocFields(); render();
+}
+function undo(){ if(hpos>0){ hpos--; restore(hist[hpos]); syncHistBtns(); toast("Undo"); } }
+function redo(){ if(hpos<hist.length-1){ hpos++; restore(hist[hpos]); syncHistBtns(); toast("Redo"); } }
+function syncHistBtns(){ $("#btnUndo").disabled = hpos<=0; $("#btnRedo").disabled = hpos>=hist.length-1; }
+
+// Compose
+let flatDirty = true;
+let live = null;   // {mode:'paint'|'erase'|'move', dx, dy}
+
+function composeFlat(){
+  fctx.setTransform(1,0,0,1,0,0);
+  fctx.clearRect(0,0,doc.w,doc.h);
+  for(const l of doc.layers){
+    if(!l.visible || l.opacity===0) continue;
+    fctx.globalAlpha = l.opacity;
+    fctx.globalCompositeOperation = l.blend === "normal" ? "source-over" : l.blend;
+    if(live && l === active()){
+      xctx.setTransform(1,0,0,1,0,0);
+      xctx.globalCompositeOperation = "source-over";
+      xctx.globalAlpha = 1;
+      xctx.clearRect(0,0,doc.w,doc.h);
+      if(live.mode === "move"){
+        xctx.drawImage(live.src, live.dx, live.dy);
+      } else {
+        xctx.drawImage(l.cv,0,0);
+        if(selection){ xctx.save(); xctx.beginPath(); xctx.rect(selection.x,selection.y,selection.w,selection.h); xctx.clip(); }
+        xctx.globalAlpha = live.alpha;
+        xctx.globalCompositeOperation = live.mode === "erase" ? "destination-out" : "source-over";
+        xctx.drawImage(strokeBuf,0,0);
+        if(selection) xctx.restore();
+      }
+      fctx.drawImage(scratch,0,0);
+    } else {
+      fctx.drawImage(l.cv,0,0);
+    }
+  }
+  fctx.globalAlpha = 1; fctx.globalCompositeOperation = "source-over";
+  flatDirty = false;
+}
+function getFlat(){ if(flatDirty || live) composeFlat(); return flat; }
+
+// Render
+let antOffset = 0, antRaf = 0;
+function render(){
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if(view.width !== Math.round(w*dpr) || view.height !== Math.round(h*dpr)){
+    view.width = Math.round(w*dpr); view.height = Math.round(h*dpr);
+  }
+  vctx.setTransform(dpr,0,0,dpr,0,0);
+  vctx.clearRect(0,0,w,h);
+
+  const sx = Math.round(ox), sy = Math.round(oy), sw = doc.w*scale, sh = doc.h*scale;
+
+  if(!checkerPat) checkerPat = vctx.createPattern(checker,"repeat");
+  vctx.save();
+  vctx.beginPath(); vctx.rect(sx,sy,sw,sh); vctx.clip();
+  vctx.fillStyle = checkerPat; vctx.fillRect(sx,sy,sw,sh);
+  vctx.restore();
+
+  vctx.imageSmoothingEnabled = scale < 1;
+  vctx.drawImage(getFlat(), sx, sy, sw, sh);
+
+  vctx.lineWidth = 1;
+  vctx.strokeStyle = "rgba(255,255,255,.18)";
+  vctx.strokeRect(sx-.5, sy-.5, sw+1, sh+1);
+
+  if(preview) preview(vctx, sx, sy);
+
+  if(selection){
+    const r = { x:sx+selection.x*scale, y:sy+selection.y*scale, w:selection.w*scale, h:selection.h*scale };
+    vctx.save();
+    vctx.setLineDash([5,4]); vctx.lineDashOffset = -antOffset;
+    vctx.strokeStyle = "#000"; vctx.lineWidth = 1; vctx.strokeRect(r.x+.5,r.y+.5,r.w,r.h);
+    vctx.strokeStyle = "#fff"; vctx.lineDashOffset = -antOffset+5; vctx.strokeRect(r.x+.5,r.y+.5,r.w,r.h);
+    vctx.restore();
+  }
+  drawGuide(vctx, sx, sy);
+}
+let preview = null;
+function antsLoop(){
+  antRaf = 0;
+  if(selection && !document.hidden){ antOffset = (antOffset+0.45)%9; render(); antRaf = requestAnimationFrame(antsLoop); }
+}
+function kickAnts(){ if(selection && !antRaf) antRaf = requestAnimationFrame(antsLoop); }
+
+// View ops
+function fit(){
+  const w = stage.clientWidth-48, h = stage.clientHeight-48;
+  scale = clamp(Math.min(w/doc.w, h/doc.h), 0.02, 8);
+  ox = (stage.clientWidth - doc.w*scale)/2;
+  oy = (stage.clientHeight - doc.h*scale)/2;
+  render(); syncStatus();
+}
+function zoomAt(cx, cy, f){
+  const n = clamp(scale*f, 0.03, 32), k = n/scale;
+  ox = cx-(cx-ox)*k; oy = cy-(cy-oy)*k; scale = n;
+  render(); syncStatus();
+}
+const toDoc = (px,py) => ({ x:(px-ox)/scale, y:(py-oy)/scale });
+
+// Tools UI
+const TOOLS = [
+  {id:"move",   key:"V", icon:"i-move",   label:"Move"},
+  {id:"select", key:"M", icon:"i-select", label:"Rectangular select"},
+  {id:"brush",  key:"B", icon:"i-brush",  label:"Brush"},
+  {id:"eraser", key:"E", icon:"i-eraser", label:"Eraser"},
+  {id:"fill",   key:"G", icon:"i-fill",   label:"Paint bucket"},
+  {id:"shape",  key:"U", icon:"i-shape",  label:"Shape"},
+  {id:"text",   key:"T", icon:"i-text",   label:"Text"},
+  {id:"retouch",key:"R", icon:"i-heal",   label:"Retouch"},
+  {id:"pick",   key:"I", icon:"i-pick",   label:"Colour picker"},
+  {id:"pan",    key:"H", icon:"i-hand",   label:"Pan"}
+];
+const rail = $("#rail");
+TOOLS.forEach(t => {
+  const b = el("button",{className:"tool", title:t.label+"  ("+t.key+")"});
+  b.type = "button"; b.setAttribute("aria-pressed", String(state.tool===t.id)); b.dataset.tool = t.id;
+  b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#'+t.icon+'"/></svg><span class="key">'+t.key+'</span>';
+  b.addEventListener("click", () => setTool(t.id));
+  rail.appendChild(b);
+});
+
+
+function setTool(id){
+  state.tool = id;
+  for(const b of rail.querySelectorAll(".tool")) b.setAttribute("aria-pressed", String(b.dataset.tool===id));
+  const t = TOOLS.find(t=>t.id===id);
+  $("#toolTitle").textContent = t.label;
+  $("#sectTool").dataset.open = "true";
+  view.style.cursor = id==="pan" ? "grab" : id==="text" ? "text" : id==="pick" ? "copy" : "crosshair";
+  buildToolPanel();
+}
+
+function sliderRow(label, id, min, max, val, step, fmt){
+  return '<div class="field"><label for="'+id+'">'+label+'</label><div class="row">'+
+    '<input type="range" id="'+id+'" min="'+min+'" max="'+max+'" step="'+(step||1)+'" value="'+val+'">'+
+    '<span class="val" id="'+id+'V">'+fmt(val)+'</span></div></div>';
+}
+function bindSlider(id, set, fmt){
+  const r = $("#"+id), out = $("#"+id+"V");
+  r.addEventListener("input", () => { set(parseFloat(r.value)); out.textContent = fmt(parseFloat(r.value)); });
+}
+
+function buildToolPanel(){
+  const b = $("#toolBody"); const t = state.tool;
+  if(t==="brush"){
+    const s = state.brush;
+    b.innerHTML =
+      sliderRow("Size","bSize",1,400,s.size,1,v=>v+"px")+
+      sliderRow("Hardness","bHard",0,100,Math.round(s.hardness*100),1,v=>v+"%")+
+      sliderRow("Opacity","bOp",1,100,Math.round(s.opacity*100),1,v=>v+"%")+
+      '<p class="hint">Paints on the active layer. With a selection active, paint is clipped to it.</p>';
+    bindSlider("bSize", v=>s.size=v, v=>v+"px");
+    bindSlider("bHard", v=>s.hardness=v/100, v=>v+"%");
+    bindSlider("bOp", v=>s.opacity=v/100, v=>v+"%");
+  } else if(t==="eraser"){
+    const s = state.eraser, magic = s.mode==="magic";
+    b.innerHTML =
+      '<div class="seg" id="eMode"><button data-m="brush" aria-pressed="'+!magic+'">Brush</button>'+
+      '<button data-m="magic" aria-pressed="'+magic+'">Magic</button></div>'+
+      (magic
+        ? sliderRow("Tolerance","eTol",0,140,s.tolerance,1,v=>String(v))+
+          sliderRow("Feather","eFeather",0,8,s.feather,0.5,v=>v+"px")+
+          '<div class="seg" id="eCont"><button data-c="1" aria-pressed="'+s.contiguous+'">Contiguous</button>'+
+          '<button data-c="0" aria-pressed="'+!s.contiguous+'">Whole layer</button></div>'+
+          '<button class="btn sm primary" id="eBg">Remove background</button>'+
+          '<p class="hint">Click a colour to erase it to transparency. <b>Remove background</b> floods inward from the edges of the image instead, which clears an even backdrop in one go.</p>'+
+          '<p class="hint">Raise Tolerance until the whole backdrop goes in one click; if the subject starts disappearing too, it has gone too far. Feather softens the cut edge.</p>'
+        : sliderRow("Size","bSize",1,400,s.size,1,v=>v+"px")+
+          sliderRow("Hardness","bHard",0,100,Math.round(s.hardness*100),1,v=>v+"%")+
+          sliderRow("Opacity","bOp",1,100,Math.round(s.opacity*100),1,v=>v+"%")+
+          '<p class="hint">Erases to transparency on the active layer. The grey chequerboard is what transparency looks like.</p>')+
+      '<p class="hint">Export as PNG or WebP to keep transparency. JPEG has no alpha channel, so it fills transparent pixels with white.</p>';
+    segment("#eMode", e => { s.mode = e.dataset.m; buildToolPanel(); });
+    if(magic){
+      bindSlider("eTol", v=>s.tolerance=v, v=>String(v));
+      bindSlider("eFeather", v=>s.feather=v, v=>v+"px");
+      segment("#eCont", e => { s.contiguous = e.dataset.c==="1"; });
+      $("#eBg").onclick = removeBackground;
+    } else {
+      bindSlider("bSize", v=>s.size=v, v=>v+"px");
+      bindSlider("bHard", v=>s.hardness=v/100, v=>v+"%");
+      bindSlider("bOp", v=>s.opacity=v/100, v=>v+"%");
+    }
+  } else if(t==="fill"){
+    b.innerHTML =
+      sliderRow("Tolerance","fTol",0,120,state.fill.tolerance,1,v=>String(v))+
+      '<div class="seg" id="fMode"><button data-c="1" aria-pressed="'+state.fill.contiguous+'">Contiguous</button>'+
+      '<button data-c="0" aria-pressed="'+!state.fill.contiguous+'">Whole layer</button></div>'+
+      '<p class="hint">Click to flood the area under the cursor with the foreground colour.</p>';
+    bindSlider("fTol", v=>state.fill.tolerance=v, v=>String(v));
+    segment("#fMode", el => { state.fill.contiguous = el.dataset.c==="1"; });
+  } else if(t==="shape"){
+    b.innerHTML =
+      '<div class="seg" id="shKind">'+["rect","ellipse","line","triangle"].map(k=>
+        '<button data-k="'+k+'" aria-pressed="'+(state.shape.kind===k)+'">'+k+'</button>').join("")+'</div>'+
+      '<div class="seg" id="shMode"><button data-m="fill" aria-pressed="'+(state.shape.mode==="fill")+'">Fill</button>'+
+      '<button data-m="stroke" aria-pressed="'+(state.shape.mode==="stroke")+'">Stroke</button></div>'+
+      sliderRow("Stroke","shW",1,80,state.shape.width,1,v=>v+"px")+
+      sliderRow("Corner","shR",0,120,state.shape.radius,1,v=>v+"px")+
+      '<p class="hint">Drag on the canvas. Hold Shift for a square, circle, or 45° line.</p>';
+    segment("#shKind", e => { state.shape.kind = e.dataset.k; });
+    segment("#shMode", e => { state.shape.mode = e.dataset.m; });
+    bindSlider("shW", v=>state.shape.width=v, v=>v+"px");
+    bindSlider("shR", v=>state.shape.radius=v, v=>v+"px");
+  } else if(t==="text"){
+    b.innerHTML =
+      '<textarea id="txVal" placeholder="Type here, then click on the canvas">'+esc(state.text.value)+'</textarea>'+
+      '<div class="field"><label for="txFam">Font</label><select id="txFam">'+
+        ["Archivo","Playfair Display","IBM Plex Mono","Georgia","Times New Roman","Courier New","Impact","Verdana"]
+        .map(f=>'<option'+(state.text.family===f?" selected":"")+'>'+esc(f)+'</option>').join("")+'</select></div>'+
+      sliderRow("Size","txSize",8,400,state.text.size,1,v=>v+"px")+
+      '<div class="seg" id="txW"><button data-w="400" aria-pressed="'+(state.text.weight===400)+'">Regular</button>'+
+      '<button data-w="700" aria-pressed="'+(state.text.weight===700)+'">Bold</button>'+
+      '<button data-i="1" aria-pressed="'+state.text.italic+'" style="font-style:italic">Italic</button></div>'+
+      '<div class="seg" id="txA">'+["left","center","right"].map(a=>
+        '<button data-a="'+a+'" aria-pressed="'+(state.text.align===a)+'">'+a+'</button>').join("")+'</div>'+
+      '<p class="hint">Click the canvas to place the text on the active layer.</p>';
+    $("#txVal").addEventListener("input", e => state.text.value = e.target.value);
+    $("#txFam").addEventListener("change", e => state.text.family = e.target.value);
+    bindSlider("txSize", v=>state.text.size=v, v=>v+"px");
+    $("#txW").addEventListener("click", e => {
+      const btn = e.target.closest("button"); if(!btn) return;
+      if(btn.dataset.i){ state.text.italic = !state.text.italic; btn.setAttribute("aria-pressed", String(state.text.italic)); }
+      else { state.text.weight = +btn.dataset.w;
+        for(const x of $("#txW").querySelectorAll("button[data-w]")) x.setAttribute("aria-pressed", String(+x.dataset.w===state.text.weight)); }
+    });
+    segment("#txA", e => { state.text.align = e.dataset.a; });
+  } else if(t==="retouch"){
+    const r = state.retouch;
+    b.innerHTML =
+      '<div class="seg" id="rMode">'+
+        '<button data-m="heal" aria-pressed="'+(r.mode==="heal")+'">Heal</button>'+
+        '<button data-m="smooth" aria-pressed="'+(r.mode==="smooth")+'">Smooth</button>'+
+        '<button data-m="clone" aria-pressed="'+(r.mode==="clone")+'">Clone</button>'+
+      '</div>'+
+      sliderRow("Size","rSize",4,250,r.size,1,v=>v+"px")+
+      sliderRow("Strength","rStr",5,100,Math.round(r.strength*100),1,v=>v+"%")+
+      (r.mode==="clone" ? "" :
+        sliderRow("Keep pores","rTex",0,100,Math.round(r.texture*100),1,v=>v+"%")+
+        sliderRow("Edge guard","rThr",2,60,r.threshold,1,v=>String(v))+
+        '<div class="seg" id="rSkin"><button data-s="1" aria-pressed="'+r.skinOnly+'">Skin tones only</button>'+
+        '<button data-s="0" aria-pressed="'+!r.skinOnly+'">Everywhere</button></div>')+
+      '<p class="hint">'+(
+        r.mode==="heal" ? "Paint along a wrinkle or over a blemish. The line’s shading is replaced with skin interpolated from the ring around the brush, and the pore texture is put back on top."
+      : r.mode==="smooth" ? "Paint to soften an area. Detail stronger than the edge guard is left alone, so a lash or a lip edge survives a stroke across it."
+      : "Alt-click (or ⌥-click) to set the source point, then paint to copy pixels from it — for stray hairs and anything the heal brush smears."
+      )+'</p>'+
+      (r.mode==="clone" ? '<p class="hint" id="rSrcNote">'+(r.src?("Source set at "+r.src.x+", "+r.src.y):"No source set yet.")+'</p>' : '')+
+      '<p class="hint">Make the brush slightly wider than the wrinkle, not wider than the whole cheek. Shorter strokes undo better.</p>';
+    segment("#rMode", e => { r.mode = e.dataset.m; buildToolPanel(); });
+    bindSlider("rSize", v=>r.size=v, v=>v+"px");
+    bindSlider("rStr", v=>r.strength=v/100, v=>v+"%");
+    if(r.mode!=="clone"){
+      bindSlider("rTex", v=>r.texture=v/100, v=>v+"%");
+      bindSlider("rThr", v=>r.threshold=v, v=>String(v));
+      segment("#rSkin", e => { r.skinOnly = e.dataset.s==="1"; });
+    }
+  } else if(t==="select"){
+    b.innerHTML =
+      '<div class="row"><button class="btn sm" id="selAll">Select all</button>'+
+      '<button class="btn sm" id="selNone">Deselect</button>'+
+      '<button class="btn sm" id="selClear">Clear pixels</button></div>'+
+      '<div class="row"><button class="btn sm" id="selFill">Fill</button>'+
+      '<button class="btn sm" id="selStroke">Stroke outline</button></div>'+
+      '<p class="hint">Drag a rectangle. Painting, fills, and adjustments stay inside it; Crop trims the document to it.</p>';
+    $("#selAll").onclick = () => { selection = {x:0,y:0,w:doc.w,h:doc.h}; kickAnts(); render(); syncStatus(); };
+    $("#selNone").onclick = () => { selection = null; render(); syncStatus(); };
+    $("#selClear").onclick = clearSelection;
+    $("#selFill").onclick = () => { const l=active(); if(!l) return; const r = selection||{x:0,y:0,w:doc.w,h:doc.h};
+      l.ctx.fillStyle = state.color; l.ctx.fillRect(r.x,r.y,r.w,r.h); touch(l); after("Filled"); };
+    $("#selStroke").onclick = () => { const l=active(); if(!l||!selection) return toast("Make a selection first");
+      l.ctx.strokeStyle = state.color; l.ctx.lineWidth = state.shape.width;
+      l.ctx.strokeRect(selection.x,selection.y,selection.w,selection.h); touch(l); after("Stroked"); };
+  } else if(t==="move"){
+    b.innerHTML = '<p class="hint">Drag to move everything on the active layer. Arrow keys nudge by 1px, Shift+arrow by 10px.</p>'+
+      '<div class="row"><button class="btn sm" id="mvCenter">Centre layer</button></div>';
+    $("#mvCenter").onclick = centerLayer;
+  } else if(t==="pick"){
+    b.innerHTML = '<p class="hint">Click to sample the composited colour under the cursor into the foreground swatch.</p>';
+  } else {
+    b.innerHTML = '<p class="hint">Drag to pan the canvas. Scroll to zoom, Ctrl+0 to fit.</p>';
+  }
+}
+function segment(sel, fn){
+  const root = $(sel);
+  root.addEventListener("click", e => {
+    const btn = e.target.closest("button"); if(!btn) return;
+    for(const x of root.querySelectorAll("button")) x.setAttribute("aria-pressed","false");
+    btn.setAttribute("aria-pressed","true"); fn(btn);
+  });
+}
+
+// Painting
+function hexToRgb(h){ const n = parseInt(h.slice(1),16); return [n>>16&255, n>>8&255, n&255]; }
+let stampCache = {key:"", cv:null};
+function stamp(size, hardness, color){
+  const key = size+"|"+hardness+"|"+color;
+  if(stampCache.key===key) return stampCache.cv;
+  const s = Math.max(1, Math.ceil(size));
+  const c = el("canvas"); c.width = c.height = s;
+  const x = c.getContext("2d"); const r = s/2;
+  const [R,G,B] = hexToRgb(color);
+  if(hardness >= 0.985){
+    x.fillStyle = color; x.beginPath(); x.arc(r,r,Math.max(.4,r-.3),0,Math.PI*2); x.fill();
+  } else {
+    const g = x.createRadialGradient(r,r,Math.max(.01,r*hardness*0.98), r,r,r);
+    g.addColorStop(0,"rgba("+R+","+G+","+B+",1)");
+    g.addColorStop(1,"rgba("+R+","+G+","+B+",0)");
+    x.fillStyle = g; x.fillRect(0,0,s,s);
+  }
+  stampCache = {key, cv:c};
+  return c;
+}
+function stampLine(x0,y0,x1,y1,size,hardness,color){
+  const st = stamp(size,hardness,color), r = st.width/2;
+  const dx = x1-x0, dy = y1-y0, d = Math.hypot(dx,dy);
+  const step = Math.max(0.6, size*0.14);
+  const n = Math.max(1, Math.ceil(d/step));
+  for(let i=0;i<=n;i++){
+    const t = i/n;
+    sctx.drawImage(st, x0+dx*t-r, y0+dy*t-r);
+  }
+}
+function commitStroke(mode, alpha){
+  const l = active(); if(!l) return;
+  l.ctx.save();
+  if(selection){ l.ctx.beginPath(); l.ctx.rect(selection.x,selection.y,selection.w,selection.h); l.ctx.clip(); }
+  l.ctx.globalAlpha = alpha;
+  l.ctx.globalCompositeOperation = mode==="erase" ? "destination-out" : "source-over";
+  l.ctx.drawImage(strokeBuf,0,0);
+  l.ctx.restore();
+  sctx.clearRect(0,0,doc.w,doc.h);
+  touch(l);
+}
+
+// Pointer
+let drag = null, spaceDown = false;
+const COARSE = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+
+// Two fingers pinch to zoom and drag to pan. Tracked by hand because pointer
+// events arrive one per finger.
+const touches = new Map();
+let pinch = null;
+
+function abortDrag(){
+  if(!drag) return;
+  if(drag.kind === "paint" || drag.kind === "shape"){
+    sctx.clearRect(0,0,doc.w,doc.h);        // drop the half-made stroke
+    live = null;
+  } else if(drag.kind === "move" && live){
+    live = null;
+  } else if(drag.kind === "retouch"){
+    touch(active()); commit();              // Already painted, so keep it.
+  }
+  drag = null;
+  flatDirty = true; render();
+}
+function pinchInfo(){
+  const [a, b] = [...touches.values()];
+  return {
+    d: Math.hypot(a.x-b.x, a.y-b.y),
+    x: (a.x+b.x)/2,
+    y: (a.y+b.y)/2
+  };
+}
+
+stage.addEventListener("pointerdown", e => {
+  if(e.pointerType === "touch"){
+    const r = stage.getBoundingClientRect();
+    touches.set(e.pointerId, { x:e.clientX-r.left, y:e.clientY-r.top });
+    if(touches.size === 2){
+      abortDrag();
+      pinch = { ...pinchInfo(), scale, ox, oy };
+      return;
+    }
+    if(touches.size > 2) return;
+  }
+  if(e.button===1 || spaceDown || state.tool==="pan"){
+    drag = {kind:"pan", x:e.clientX, y:e.clientY, ox, oy};
+    stage.setPointerCapture(e.pointerId); view.style.cursor="grabbing"; e.preventDefault(); return;
+  }
+  if(e.button!==0) return;
+  const rect = stage.getBoundingClientRect();
+  const p = toDoc(e.clientX-rect.left, e.clientY-rect.top);
+  const l = active();
+  stage.setPointerCapture(e.pointerId);
+  $("#hint").style.opacity = "0";
+
+  // Guide handles take the pointer before any tool, so marks stay draggable.
+  const handle = faceHit(p);
+  if(handle){
+    drag = {kind:"guide", id:handle.id, start:p};
+    return;
+  }
+
+  if(state.tool==="eraser" && state.eraser.mode==="magic"){
+    if(!l) return;
+    magicErase(l, Math.floor(p.x), Math.floor(p.y));
+  } else if(state.tool==="brush" || state.tool==="eraser"){
+    if(!l) return;
+    const s = state.tool==="brush" ? state.brush : state.eraser;
+    sctx.clearRect(0,0,doc.w,doc.h);
+    live = { mode: state.tool==="brush"?"paint":"erase", alpha:s.opacity };
+    stampLine(p.x,p.y,p.x,p.y, s.size, s.hardness, state.tool==="brush"?state.color:"#ffffff");
+    drag = {kind:"paint", last:p, s};
+    render();
+  } else if(state.tool==="select"){
+    drag = {kind:"select", start:p};
+    selection = {x:p.x, y:p.y, w:0, h:0};
+  } else if(state.tool==="shape"){
+    if(!l) return;
+    drag = {kind:"shape", start:p};
+    sctx.clearRect(0,0,doc.w,doc.h);
+    live = {mode:"paint", alpha:1};
+  } else if(state.tool==="move"){
+    if(!l) return;
+    const src = el("canvas"); src.width=doc.w; src.height=doc.h; src.getContext("2d").drawImage(l.cv,0,0);
+    live = {mode:"move", src, dx:0, dy:0};
+    drag = {kind:"move", start:p};
+  } else if(state.tool==="retouch"){
+    if(!l) return;
+    const r = state.retouch;
+    if(r.mode==="clone" && (e.altKey || e.metaKey)){
+      r.src = {x:Math.round(p.x), y:Math.round(p.y)};
+      buildToolPanel(); toast("Clone source set");
+      return;
+    }
+    if(r.mode==="clone" && !r.src){ toast("Alt-click to set a clone source first"); return; }
+    dropPreview();                         // bake what the preview showed, keep the settings
+    const opts = { mode:r.mode, size:r.size, strength:r.strength, texture:r.texture,
+                   threshold:r.threshold, skinOnly:r.skinOnly, src:r.src };
+    if(r.mode==="clone"){
+      const snap = el("canvas"); snap.width=doc.w; snap.height=doc.h;
+      snap.getContext("2d").drawImage(l.cv,0,0);
+      opts.cloneFrom = snap; opts.dx = p.x-r.src.x; opts.dy = p.y-r.src.y;
+    }
+    retouchDab(l, p.x, p.y, opts);
+    drag = {kind:"retouch", last:p, opts};
+    flatDirty = true; render();
+  } else if(state.tool==="fill"){
+    if(!l) return;
+    bucket(l, Math.floor(p.x), Math.floor(p.y));
+  } else if(state.tool==="text"){
+    if(!l) return;
+    drawText(l, p.x, p.y);
+  } else if(state.tool==="pick"){
+    pickColor(Math.floor(p.x), Math.floor(p.y));
+  }
+});
+
+stage.addEventListener("pointermove", e => {
+  const rect = stage.getBoundingClientRect();
+
+  if(e.pointerType === "touch" && touches.has(e.pointerId)){
+    touches.set(e.pointerId, { x:e.clientX-rect.left, y:e.clientY-rect.top });
+    if(pinch && touches.size >= 2){
+      const now = pinchInfo();
+      const k = clamp(now.d/Math.max(1, pinch.d), 0.05, 20);
+      scale = clamp(pinch.scale*k, 0.03, 32);
+      // Keep the point between the fingers under them as they move.
+      ox = now.x - (pinch.x - pinch.ox)*(scale/pinch.scale);
+      oy = now.y - (pinch.y - pinch.oy)*(scale/pinch.scale);
+      render(); syncStatus();
+      return;
+    }
+  }
+
+  const p = toDoc(e.clientX-rect.left, e.clientY-rect.top);
+  $("#stPos").textContent = Math.floor(p.x)+", "+Math.floor(p.y);
+
+  if(!drag) return;
+  if(drag.kind==="pan"){
+    ox = drag.ox + (e.clientX-drag.x); oy = drag.oy + (e.clientY-drag.y); render(); return;
+  }
+  if(drag.kind==="paint"){
+    stampLine(drag.last.x, drag.last.y, p.x, p.y, drag.s.size, drag.s.hardness,
+              state.tool==="brush"?state.color:"#ffffff");
+    drag.last = p; flatDirty = true; render(); return;
+  }
+  if(drag.kind==="guide"){
+    moveHandle(drag.id, p, drag.start);
+    drag.start = p; render(); return;
+  }
+  if(drag.kind==="retouch"){
+    retouchStroke(active(), drag.last.x, drag.last.y, p.x, p.y, drag.opts);
+    drag.last = p; flatDirty = true; render(); return;
+  }
+  if(drag.kind==="select"){
+    let x1=p.x, y1=p.y;
+    if(e.shiftKey){ const d = Math.max(Math.abs(x1-drag.start.x), Math.abs(y1-drag.start.y));
+      x1 = drag.start.x + Math.sign(x1-drag.start.x)*d; y1 = drag.start.y + Math.sign(y1-drag.start.y)*d; }
+    selection = normRect(drag.start.x, drag.start.y, x1, y1);
+    render(); syncStatus(); return;
+  }
+  if(drag.kind==="move"){
+    live.dx = Math.round(p.x-drag.start.x); live.dy = Math.round(p.y-drag.start.y);
+    flatDirty = true; render(); return;
+  }
+  if(drag.kind==="shape"){
+    sctx.clearRect(0,0,doc.w,doc.h);
+    paintShape(sctx, drag.start, p, e.shiftKey);
+    flatDirty = true; render(); return;
+  }
+});
+
+function endDrag(e){
+  if(e && e.pointerType === "touch"){
+    touches.delete(e.pointerId);
+    if(touches.size < 2 && pinch){ pinch = null; drag = null; return; }
+  }
+  if(!drag) return;
+  const k = drag.kind; const d = drag; drag = null;
+  if(k==="pan"){ view.style.cursor = state.tool==="pan" ? "grab" : "crosshair"; return; }
+  if(k==="paint"){ commitStroke(live.mode, live.alpha); live = null; after(); return; }
+  if(k==="retouch"){ touch(active()); after(); return; }
+  if(k==="guide"){ render(); return; }
+  if(k==="shape"){ commitStroke("paint", 1); live = null; after(); return; }
+  if(k==="move"){
+    const l = active();
+    l.ctx.setTransform(1,0,0,1,0,0);
+    l.ctx.clearRect(0,0,doc.w,doc.h);
+    l.ctx.drawImage(live.src, live.dx, live.dy);
+    live = null; touch(l); after(); return;
+  }
+  if(k==="select"){
+    if(!selection || selection.w<2 || selection.h<2) selection = null;
+    else selection = clipRect(selection);
+    kickAnts(); render(); syncStatus(); return;
+  }
+}
+stage.addEventListener("pointerup", endDrag);
+stage.addEventListener("pointercancel", endDrag);
+
+stage.addEventListener("wheel", e => {
+  e.preventDefault();
+  const rect = stage.getBoundingClientRect();
+  if(e.ctrlKey || !e.shiftKey){
+    zoomAt(e.clientX-rect.left, e.clientY-rect.top, e.deltaY<0 ? 1.12 : 1/1.12);
+  } else {
+    ox -= e.deltaY; render();
+  }
+}, {passive:false});
+
+function normRect(x0,y0,x1,y1){
+  return { x:Math.round(Math.min(x0,x1)), y:Math.round(Math.min(y0,y1)),
+           w:Math.round(Math.abs(x1-x0)), h:Math.round(Math.abs(y1-y0)) };
+}
+function clipRect(r){
+  const x = clamp(r.x,0,doc.w), y = clamp(r.y,0,doc.h);
+  return { x, y, w: clamp(r.w, 0, doc.w-x), h: clamp(r.h, 0, doc.h-y) };
+}
+
+// Shapes
+function paintShape(ctx, a, b, square){
+  const sh = state.shape;
+  let x1 = b.x, y1 = b.y;
+  if(square && sh.kind!=="line"){
+    const d = Math.max(Math.abs(x1-a.x), Math.abs(y1-a.y));
+    x1 = a.x + Math.sign(x1-a.x||1)*d; y1 = a.y + Math.sign(y1-a.y||1)*d;
+  }
+  ctx.save();
+  ctx.strokeStyle = state.color; ctx.fillStyle = state.color;
+  ctx.lineWidth = sh.width; ctx.lineJoin = "round"; ctx.lineCap = "round";
+  const r = normRect(a.x,a.y,x1,y1);
+  ctx.beginPath();
+  if(sh.kind==="rect"){
+    const rad = Math.min(sh.radius, r.w/2, r.h/2);
+    if(rad>0 && ctx.roundRect) ctx.roundRect(r.x,r.y,r.w,r.h,rad); else ctx.rect(r.x,r.y,r.w,r.h);
+  } else if(sh.kind==="ellipse"){
+    ctx.ellipse(r.x+r.w/2, r.y+r.h/2, r.w/2, r.h/2, 0, 0, Math.PI*2);
+  } else if(sh.kind==="triangle"){
+    ctx.moveTo(r.x+r.w/2, r.y); ctx.lineTo(r.x+r.w, r.y+r.h); ctx.lineTo(r.x, r.y+r.h); ctx.closePath();
+  } else {
+    let ex = x1, ey = y1;
+    if(square){
+      const dx = ex-a.x, dy = ey-a.y, ang = Math.round(Math.atan2(dy,dx)/(Math.PI/4))*(Math.PI/4), d = Math.hypot(dx,dy);
+      ex = a.x+Math.cos(ang)*d; ey = a.y+Math.sin(ang)*d;
+    }
+    ctx.moveTo(a.x,a.y); ctx.lineTo(ex,ey);
+  }
+  if(sh.kind==="line" || sh.mode==="stroke") ctx.stroke(); else ctx.fill();
+  ctx.restore();
+}
+
+// Text
+function drawText(l, x, y){
+  const t = state.text;
+  if(!t.value.trim()) return toast("Type something in the text field first");
+  l.ctx.save();
+  if(selection){ l.ctx.beginPath(); l.ctx.rect(selection.x,selection.y,selection.w,selection.h); l.ctx.clip(); }
+  l.ctx.fillStyle = state.color;
+  l.ctx.textAlign = t.align;
+  l.ctx.textBaseline = "top";
+  l.ctx.font = (t.italic?"italic ":"")+t.weight+" "+t.size+"px '"+t.family+"', sans-serif";
+  const lines = t.value.split("\n");
+  lines.forEach((line,i) => l.ctx.fillText(line, x, y + i*t.size*1.18));
+  l.ctx.restore();
+  touch(l); after("Text placed");
+}
+
+// Bucket
+function bucket(l, px, py){
+  const b = selection ? clipRect(selection) : {x:0,y:0,w:doc.w,h:doc.h};
+  if(px<b.x||py<b.y||px>=b.x+b.w||py>=b.y+b.h) return;
+  const img = l.ctx.getImageData(b.x,b.y,b.w,b.h), d = img.data;
+  const sx = px-b.x, sy = py-b.y;
+  const si = (sy*b.w+sx)*4;
+  const t0 = d[si], t1 = d[si+1], t2 = d[si+2], t3 = d[si+3];
+  const [nr,ng,nb] = hexToRgb(state.color);
+  const tol = state.fill.tolerance;
+  const match = i => Math.abs(d[i]-t0)<=tol && Math.abs(d[i+1]-t1)<=tol && Math.abs(d[i+2]-t2)<=tol && Math.abs(d[i+3]-t3)<=tol;
+  const put = i => { d[i]=nr; d[i+1]=ng; d[i+2]=nb; d[i+3]=255; };
+  if(!state.fill.contiguous){
+    for(let i=0;i<d.length;i+=4) if(match(i)) put(i);
+  } else {
+    if(t0===nr && t1===ng && t2===nb && t3===255) return;
+    const seen = new Uint8Array(b.w*b.h);
+    const st = new Int32Array(b.w*b.h);   // bounded: a pixel is pushed once
+    let sp = 0;
+    st[sp++] = sy*b.w+sx;
+    while(sp > 0){
+      const q = st[--sp];
+      if(seen[q]) continue;
+      const i = q*4;
+      if(!match(i)) continue;
+      seen[q] = 1; put(i);
+      const qx = q%b.w, qy = (q-qx)/b.w;
+      if(qx>0 && !seen[q-1] && sp<st.length) st[sp++] = q-1;
+      if(qx<b.w-1 && !seen[q+1] && sp<st.length) st[sp++] = q+1;
+      if(qy>0 && !seen[q-b.w] && sp<st.length) st[sp++] = q-b.w;
+      if(qy<b.h-1 && !seen[q+b.w] && sp<st.length) st[sp++] = q+b.w;
+    }
+  }
+  l.ctx.putImageData(img, b.x, b.y);
+  touch(l); after("Filled");
+}
+
+// Magic erase. Same flood fill as the bucket, but the matched pixels become a
+// mask that is blurred and punched out with destination-out, for a soft edge.
+function matchMask(l, seeds, tol, contiguous){
+  const w = doc.w, h = doc.h;
+  const d = l.ctx.getImageData(0,0,w,h).data;
+  const mask = new Uint8Array(w*h);
+
+  // Reference colours, bucketed so a gradient backdrop collapses to a few.
+  // Comparing every pixel against thousands of seeds would be too slow.
+  const seen = new Set(), refs = [];
+  const q = Math.max(8, tol>>1);
+  for(const [sx,sy] of seeds){
+    if(sx<0||sy<0||sx>=w||sy>=h) continue;
+    const i = (sy*w+sx)*4;
+    const key = ((d[i]/q|0)<<24) ^ ((d[i+1]/q|0)<<16) ^ ((d[i+2]/q|0)<<8) ^ (d[i+3]/q|0);
+    if(seen.has(key)) continue;
+    seen.add(key);
+    refs.push([d[i],d[i+1],d[i+2],d[i+3]]);
+    if(refs.length >= 16) break;
+  }
+  if(!refs.length) return null;
+
+  // Euclidean distance, not per-channel. Per-channel accepts a cube of colour
+  // space whose corners reach 1.7x further than its faces, which is how a flood
+  // leaks along a soft shadow into the subject.
+  const t2 = tol*tol;
+  const near = i => {
+    for(let k=0;k<refs.length;k++){
+      const r = refs[k];
+      const dr = d[i]-r[0], dg = d[i+1]-r[1], db = d[i+2]-r[2], da = d[i+3]-r[3];
+      if(dr*dr + dg*dg + db*db <= t2 && da*da <= t2) return true;
+    }
+    return false;
+  };
+
+  let n = 0;
+  if(!contiguous){
+    for(let p=0;p<w*h;p++) if(near(p*4)){ mask[p]=1; n++; }
+  } else {
+    const st = new Int32Array(w*h);     // bounded: a pixel is pushed once
+    let sp = 0;
+    for(const [sx,sy] of seeds){
+      if(sx>=0 && sy>=0 && sx<w && sy<h && sp<st.length) st[sp++] = sy*w+sx;
+    }
+    while(sp > 0){
+      const p = st[--sp];
+      if(mask[p]) continue;
+      if(!near(p*4)) continue;
+      mask[p] = 1; n++;
+      const px = p%w, py = (p-px)/w;
+      if(px>0 && !mask[p-1] && sp<st.length) st[sp++] = p-1;
+      if(px<w-1 && !mask[p+1] && sp<st.length) st[sp++] = p+1;
+      if(py>0 && !mask[p-w] && sp<st.length) st[sp++] = p-w;
+      if(py<h-1 && !mask[p+w] && sp<st.length) st[sp++] = p+w;
+    }
+  }
+  return n ? mask : null;
+}
+function applyEraseMask(l, mask, feather){
+  const w = doc.w, h = doc.h;
+  const mc = el("canvas"); mc.width = w; mc.height = h;
+  const mx = mc.getContext("2d");
+  const md = mx.createImageData(w,h);
+  for(let p=0;p<w*h;p++) if(mask[p]){
+    const i = p*4;
+    md.data[i] = md.data[i+1] = md.data[i+2] = md.data[i+3] = 255;
+  }
+  mx.putImageData(md,0,0);
+  let src = mc;
+  if(feather > 0){
+    const fc = el("canvas"); fc.width = w; fc.height = h;
+    const fx = fc.getContext("2d");
+    fx.filter = "blur("+feather+"px)";
+    fx.drawImage(mc,0,0);
+    fx.filter = "none";
+    src = fc;
+  }
+  l.ctx.save();
+  if(selection){ l.ctx.beginPath(); l.ctx.rect(selection.x,selection.y,selection.w,selection.h); l.ctx.clip(); }
+  l.ctx.globalCompositeOperation = "destination-out";
+  l.ctx.drawImage(src,0,0);
+  l.ctx.restore();
+  touch(l);
+}
+function magicErase(l, x, y){
+  const s = state.eraser;
+  const mask = matchMask(l, [[x,y]], s.tolerance, s.contiguous);
+  if(!mask) return toast("Nothing matched there");
+  applyEraseMask(l, mask, s.feather);
+  after("Erased to transparency");
+}
+function removeBackground(){
+  const l = active(); if(!l) return false;
+  const s = state.eraser, w = doc.w, h = doc.h;
+  // Seed from the image edge: a backdrop touches the border, a subject usually
+  // does not. Contiguous, so the same colour inside the subject survives.
+  const seeds = [];
+  for(let x=0;x<w;x+=2){ seeds.push([x,0]); seeds.push([x,h-1]); }
+  for(let y=0;y<h;y+=2){ seeds.push([0,y]); seeds.push([w-1,y]); }
+  const mask = matchMask(l, seeds, s.tolerance, true);
+  if(!mask){ toast("The edges are already transparent"); return false; }
+  let n = 0;
+  for(let p=0;p<mask.length;p++) n += mask[p];
+  if(n > w*h*0.97){ toast("That erased almost everything — lower the tolerance"); return false; }
+  applyEraseMask(l, mask, s.feather);
+  after("Background removed — "+Math.round(n/(w*h)*100)+"% of the layer");
+  return true;
+}
+
+function pickColor(x,y){
+  if(x<0||y<0||x>=doc.w||y>=doc.h) return;
+  const d = getFlat().getContext("2d").getImageData(x,y,1,1).data;
+  const hex = "#"+[d[0],d[1],d[2]].map(v=>v.toString(16).padStart(2,"0")).join("");
+  setColor(hex);
+  toast("Picked "+hex.toUpperCase());
+}
+function setColor(hex){
+  state.color = hex;
+  $("#cFore").value = hex; $("#cFore").parentElement.style.background = hex;
+  stampCache.key = "";
+}
+
+// Layer ops
+function guard(label, fn){
+  try{ return fn(); }
+  catch(err){
+    flatDirty = true; render(); renderLayers(); syncStatus();
+    toast(label + " failed: " + (err && err.message ? err.message : "out of memory"));
+  }
+}
+function after(msg){
+  dropPreview();                   // A destructive edit keeps the pixels and the settings.
+  flatDirty = true; commit(); render(); renderLayers(); syncStatus();
+  if(msg) toast(msg);
+}
+function centerLayer(){
+  const l = active(); if(!l) return;
+  const bb = bounds(l.cv); if(!bb) return toast("Layer is empty");
+  const dx = Math.round((doc.w-bb.w)/2 - bb.x), dy = Math.round((doc.h-bb.h)/2 - bb.y);
+  const src = el("canvas"); src.width=doc.w; src.height=doc.h; src.getContext("2d").drawImage(l.cv,0,0);
+  l.ctx.clearRect(0,0,doc.w,doc.h); l.ctx.drawImage(src,dx,dy);
+  touch(l); after("Centred");
+}
+function bounds(cv){
+  const c = cv.getContext("2d",{willReadFrequently:true});
+  const d = c.getImageData(0,0,cv.width,cv.height).data;
+  let minx=cv.width, miny=cv.height, maxx=-1, maxy=-1;
+  for(let y=0;y<cv.height;y++) for(let x=0;x<cv.width;x++){
+    if(d[(y*cv.width+x)*4+3]>2){ if(x<minx)minx=x; if(x>maxx)maxx=x; if(y<miny)miny=y; if(y>maxy)maxy=y; }
+  }
+  if(maxx<0) return null;
+  return {x:minx,y:miny,w:maxx-minx+1,h:maxy-miny+1};
+}
+function clearSelection(){
+  const l = active(); if(!l) return;
+  const r = selection || {x:0,y:0,w:doc.w,h:doc.h};
+  l.ctx.clearRect(r.x,r.y,r.w,r.h);
+  touch(l); after("Cleared");
+}
+
+function renderLayers(){
+  const list = $("#layerList"); list.innerHTML = "";
+  for(let i=doc.layers.length-1;i>=0;i--){
+    const l = doc.layers[i];
+    const row = el("div",{className:"layer"});
+    row.setAttribute("aria-selected", String(i===doc.active));
+    row.dataset.vis = String(l.visible);
+    const eye = el("button",{className:"eye", title:l.visible?"Hide layer":"Show layer"});
+    eye.type="button";
+    eye.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><use href="#'+(l.visible?"i-eye":"i-eyeoff")+'"/></svg>';
+    eye.onclick = ev => { ev.stopPropagation(); l.visible = !l.visible; flatDirty=true; commit(); render(); renderLayers(); };
+    const thumb = el("div",{className:"thumb"});
+    const tc = el("canvas"); tc.width = 68; tc.height = 52;
+    const s = Math.min(68/doc.w, 52/doc.h);
+    const tx = tc.getContext("2d");
+    tx.drawImage(l.cv, (68-doc.w*s)/2, (52-doc.h*s)/2, doc.w*s, doc.h*s);
+    thumb.appendChild(tc);
+    const nm = el("div",{className:"nm", textContent:l.name});
+    nm.ondblclick = ev => {
+      ev.stopPropagation();
+      const inp = el("input",{className:"rename", value:l.name});
+      nm.replaceWith(inp); inp.focus(); inp.select();
+      const done = () => { l.name = inp.value.trim()||l.name; commit(); renderLayers(); };
+      inp.onblur = done; inp.onkeydown = k => { if(k.key==="Enter") inp.blur(); if(k.key==="Escape"){ inp.onblur=null; renderLayers(); } };
+    };
+    const meta = el("div",{className:"meta", innerHTML: Math.round(l.opacity*100)+"%<br>"+(l.blend==="normal"?"":l.blend)});
+    row.append(eye, thumb, nm, meta);
+    row.onclick = () => { doc.active = i; renderLayers(); syncLayerFields(); syncStatus(); dropPreview(); };
+    list.appendChild(row);
+  }
+  syncLayerFields();
+}
+function syncLayerFields(){
+  const l = active(); if(!l) return;
+  $("#lOpacity").value = Math.round(l.opacity*100);
+  $("#lOpacityV").textContent = Math.round(l.opacity*100)+"%";
+  $("#lBlend").value = l.blend;
+}
+
+$("#lAdd").onclick = () => { const l = makeLayer("Layer "+(doc.layers.length+1)); doc.layers.splice(doc.active+1,0,l); doc.active++; after("Layer added"); };
+$("#lDup").onclick = () => {
+  const s = active(); if(!s) return;
+  const l = makeLayer(s.name+" copy"); l.ctx.drawImage(s.cv,0,0); l.opacity=s.opacity; l.blend=s.blend;
+  doc.layers.splice(doc.active+1,0,l); doc.active++; after("Duplicated");
+};
+$("#lDel").onclick = () => {
+  if(doc.layers.length<=1) return toast("A document needs at least one layer");
+  doc.layers.splice(doc.active,1); doc.active = clamp(doc.active-1,0,doc.layers.length-1); after("Layer deleted");
+};
+$("#lUp").onclick = () => { if(doc.active>=doc.layers.length-1) return;
+  const [l] = doc.layers.splice(doc.active,1); doc.layers.splice(doc.active+1,0,l); doc.active++; after(); };
+$("#lDown").onclick = () => { if(doc.active<=0) return;
+  const [l] = doc.layers.splice(doc.active,1); doc.layers.splice(doc.active-1,0,l); doc.active--; after(); };
+$("#lMerge").onclick = () => {
+  if(doc.active<=0) return toast("Nothing below to merge into");
+  const top = doc.layers[doc.active], bot = doc.layers[doc.active-1];
+  bot.ctx.save();
+  bot.ctx.globalAlpha = top.opacity;
+  bot.ctx.globalCompositeOperation = top.blend==="normal" ? "source-over" : top.blend;
+  bot.ctx.drawImage(top.cv,0,0); bot.ctx.restore();
+  doc.layers.splice(doc.active,1); doc.active--; touch(bot); after("Merged down");
+};
+$("#lOpacity").oninput = e => { const l=active(); l.opacity = e.target.value/100;
+  $("#lOpacityV").textContent = e.target.value+"%"; flatDirty=true; render(); };
+$("#lOpacity").onchange = () => { commit(); renderLayers(); };
+$("#lBlend").onchange = e => { active().blend = e.target.value; flatDirty=true; commit(); render(); renderLayers(); };
+
+// Adjustments
+const adj = { base:null };
+// The Adjustments and Portrait panels share one preview, drawn from a copy of the
+// pixels taken when the preview started. Slider positions belong to the user and
+// are never changed by the app: dropping a preview clears the copy, not the
+// settings. Only the Reset buttons put sliders back to their defaults.
+function ensureBase(l){
+  if(adj.base) return;
+  adj.base = newCanvas(doc.w, doc.h);
+  adj.base.getContext("2d").drawImage(l.cv,0,0);
+}
+function dropPreview(){ adj.base = null; }
+function applyPreview(msg){
+  if(!adj.base) return toast("Move a slider first");
+  touch(active()); after(msg||"Applied");          // after() drops the preview.
+}
+function revertPreview(){
+  const l = active();
+  if(adj.base){
+    l.ctx.setTransform(1,0,0,1,0,0); l.ctx.filter = "none";
+    l.ctx.clearRect(0,0,doc.w,doc.h); l.ctx.drawImage(adj.base,0,0);
+  }
+  dropPreview(); resetAdjUI(); resetPorUI();       // an explicit Reset may clear settings
+  flatDirty = true; render(); renderLayers();
+}
+const ADJ = [["aBright","brightness",100,v=>v/100,v=>v],["aContrast","contrast",100,v=>v/100,v=>v],
+  ["aSat","saturate",100,v=>v/100,v=>v],["aHue","hue-rotate",0,v=>v,v=>v+"°"],
+  ["aBlur","blur",0,v=>v,v=>v+"px"],["aSepia","sepia",0,v=>v/100,v=>v+"%"],
+  ["aGray","grayscale",0,v=>v/100,v=>v+"%"],["aInvert","invert",0,v=>v/100,v=>v+"%"]];
+
+function filterString(){
+  const parts = [];
+  for(const [id,fn,def] of ADJ){
+    const v = parseFloat($("#"+id).value);
+    if(v===def) continue;
+    if(fn==="hue-rotate") parts.push("hue-rotate("+v+"deg)");
+    else if(fn==="blur") parts.push("blur("+v+"px)");
+    else parts.push(fn+"("+(v/100)+")");
+  }
+  return parts.join(" ");
+}
+function renderPreview(){
+  const l = active(); if(!l) return;
+  ensureBase(l);
+  l.ctx.save();
+  l.ctx.setTransform(1,0,0,1,0,0); l.ctx.filter = "none";
+  l.ctx.globalCompositeOperation = "source-over"; l.ctx.globalAlpha = 1;
+  l.ctx.clearRect(0,0,doc.w,doc.h);
+  l.ctx.drawImage(adj.base,0,0);
+  l.ctx.restore();
+
+  // Skin smoothing first, because it works on pixels.
+  const p = porParams();
+  if(p.strength > 0){
+    const rect = selection ? clipRect(selection) : {x:0,y:0,w:doc.w,h:doc.h};
+    if(rect.w > 0 && rect.h > 0){
+      const img = l.ctx.getImageData(rect.x,rect.y,rect.w,rect.h);
+      smoothRegion(adj.base, img, rect, p);
+      l.ctx.putImageData(img, rect.x, rect.y);
+    }
+  }
+  // Then the colour adjustments, over whatever the smoothing produced.
+  const f = filterString();
+  if(f){
+    const tmp = newCanvas(doc.w, doc.h);
+    tmp.getContext("2d").drawImage(l.cv,0,0);
+    l.ctx.save();
+    l.ctx.setTransform(1,0,0,1,0,0);
+    l.ctx.clearRect(0,0,doc.w,doc.h);
+    if(selection){
+      l.ctx.drawImage(tmp,0,0);                 // keep what is outside the selection
+      l.ctx.beginPath(); l.ctx.rect(selection.x,selection.y,selection.w,selection.h); l.ctx.clip();
+      l.ctx.clearRect(selection.x,selection.y,selection.w,selection.h);
+    }
+    l.ctx.filter = f;
+    l.ctx.drawImage(tmp,0,0);
+    l.ctx.filter = "none";
+    l.ctx.restore();
+  }
+  flatDirty = true; render();
+}
+function applyAdjPreview(){ renderPreview(); }
+for(const [id,,,,fmt] of ADJ){
+  const r = $("#"+id);
+  r.addEventListener("input", () => { $("#"+id+"V").textContent = fmt(parseFloat(r.value)); applyAdjPreview(); });
+}
+function resetAdjUI(){
+  for(const [id,,def,,fmt] of ADJ){ $("#"+id).value = def; $("#"+id+"V").textContent = fmt(def); }
+}
+$("#aApply").onclick = () => applyPreview("Adjustment applied");
+$("#aReset").onclick = revertPreview;
+$("#aAuto").onclick = () => {
+  const l = active(); if(!l) return;
+  const r = selection ? clipRect(selection) : {x:0,y:0,w:doc.w,h:doc.h};
+  const img = l.ctx.getImageData(r.x,r.y,r.w,r.h), d = img.data;
+  let lo = 255, hi = 0;
+  for(let i=0;i<d.length;i+=4){
+    if(d[i+3]<8) continue;
+    const v = (d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114);
+    if(v<lo) lo=v; if(v>hi) hi=v;
+  }
+  if(hi-lo < 4) return toast("Not enough range to stretch");
+  const k = 255/(hi-lo);
+  for(let i=0;i<d.length;i+=4){
+    if(d[i+3]<8) continue;
+    d[i]   = clamp((d[i]-lo)*k,0,255);
+    d[i+1] = clamp((d[i+1]-lo)*k,0,255);
+    d[i+2] = clamp((d[i+2]-lo)*k,0,255);
+  }
+  l.ctx.putImageData(img, r.x, r.y);
+  touch(l); after("Auto levels");
+};
+
+// Retouch.
+// Split the pixels into a low-frequency part (a blur: shading, blotches, the
+// shadow a wrinkle casts) and a detail part (original minus low: pores, grain).
+// Skin faults are in the low part, realism is in the detail part, so rebuild the
+// low part and put the detail back on top.
+
+function clipBox(x,y,w,h){
+  const x0 = clamp(Math.floor(x),0,doc.w), y0 = clamp(Math.floor(y),0,doc.h);
+  const x1 = clamp(Math.ceil(x+w),0,doc.w), y1 = clamp(Math.ceil(y+h),0,doc.h);
+  return { x:x0, y:y0, w:Math.max(0,x1-x0), h:Math.max(0,y1-y0) };
+}
+function intersect(a,b){
+  const x = Math.max(a.x,b.x), y = Math.max(a.y,b.y);
+  return { x, y, w:Math.max(0,Math.min(a.x+a.w,b.x+b.w)-x), h:Math.max(0,Math.min(a.y+a.h,b.y+b.h)-y) };
+}
+// Blur one region. Reads with padding so the kernel does not pull in
+// transparency from outside the box and halo the edges.
+function regionBlur(cv, box, radius){
+  const pad = Math.ceil(radius*3)+2;
+  const bx = clamp(box.x-pad,0,cv.width), by = clamp(box.y-pad,0,cv.height);
+  const bw = clamp(box.x+box.w+pad,0,cv.width)-bx, bh = clamp(box.y+box.h+pad,0,cv.height)-by;
+  if(bw<1||bh<1) return null;
+  const c = el("canvas"); c.width = bw; c.height = bh;
+  const x = c.getContext("2d",{willReadFrequently:true});
+  x.filter = "blur("+radius+"px)";
+  x.drawImage(cv, bx,by,bw,bh, 0,0,bw,bh);
+  x.filter = "none";
+  return x.getImageData(box.x-bx, box.y-by, box.w, box.h);
+}
+// How skin-like a colour is, using the standard YCbCr chroma window, feathered
+// so the mask has no hard border.
+function skinWeight(r,g,b){
+  const cb = 128 - 0.168736*r - 0.331264*g + 0.5*b;
+  const cr = 128 + 0.5*r - 0.418688*g - 0.081312*b;
+  const band = (v,lo,hi) => {
+    const f = 14;
+    if(v <= lo-f || v >= hi+f) return 0;
+    if(v < lo) return (v-(lo-f))/f;
+    if(v > hi) return ((hi+f)-v)/f;
+    return 1;
+  };
+  return band(cb,77,127) * band(cr,133,173);
+}
+const lum = (r,g,b) => r*0.299 + g*0.587 + b*0.114;
+
+// Whole-layer skin smoothing, used by the Portrait panel.
+function smoothRegion(srcCv, dst, rect, p){
+  const low = regionBlur(srcCv, rect, p.radius);
+  if(!low) return;
+  const fm = faceMask();
+  const d = dst.data, lo = low.data;
+  // Detail magnitude grows with the blur radius, so a fixed guard would reject
+  // ordinary skin at large radii and smoothing would weaken as you raised it.
+  const thr = Math.max(1, p.edge) * Math.max(1, p.radius/6);
+  for(let i=0;i<d.length;i+=4){
+    if(d[i+3] < 4) continue;
+    let w = p.strength;
+    if(p.skinOnly) w *= skinWeight(d[i],d[i+1],d[i+2]);
+    if(fm){
+      const q = i>>2, px = rect.x + (q % rect.w), py = rect.y + ((q/rect.w)|0);
+      w *= fm[py*doc.w + px]/255;
+    }
+    if(w <= 0.003) continue;
+    const dR = d[i]-lo[i], dG = d[i+1]-lo[i+1], dB = d[i+2]-lo[i+2];
+    const mag = Math.abs(lum(dR,dG,dB));
+    if(mag > thr) w *= Math.max(0, 1-(mag-thr)/thr);   // Edge guard.
+    if(w <= 0.003) continue;
+    d[i]   += w*((lo[i]  +dR*p.texture)-d[i]);
+    d[i+1] += w*((lo[i+1]+dG*p.texture)-d[i+1]);
+    d[i+2] += w*((lo[i+2]+dB*p.texture)-d[i+2]);
+  }
+}
+function porParams(){
+  return { strength:+$("#pStr").value/100, radius:+$("#pRad").value,
+           texture:+$("#pTex").value/100, edge:+$("#pEdge").value,
+           skinOnly: $("#pSkin").querySelector('[data-s="1"]').getAttribute("aria-pressed")==="true" };
+}
+let porRaf = 0;
+function applyPortraitPreview(){
+  if(porRaf) return;
+  porRaf = requestAnimationFrame(() => { porRaf = 0; renderPreview(); });
+}
+const POR = [["pStr",0,v=>v+"%"],["pRad",6,v=>v+"px"],["pTex",35,v=>v+"%"],["pEdge",18,v=>String(v)]];
+for(const [id,,fmt] of POR){
+  const r = $("#"+id);
+  r.addEventListener("input", () => {
+    $("#"+id+"V").textContent = fmt(parseFloat(r.value));
+    syncPorHint();
+    applyPortraitPreview();
+  });
+}
+// Radius, Keep pores and Edge guard only shape an effect Smoothing switches on.
+function syncPorHint(){
+  const off = +$("#pStr").value === 0;
+  $("#pOff").hidden = !off;
+}
+function resetPorUI(){
+  for(const [id,def,fmt] of POR){ $("#"+id).value = def; $("#"+id+"V").textContent = fmt(def); }
+  syncPorHint();
+}
+segment("#pSkin", () => applyPortraitPreview());
+$("#pApply").onclick = () => applyPreview("Skin smoothed");
+$("#pReset").onclick = revertPreview;
+$("#pPreset").onclick = () => {
+  $("#pStr").value = 62; $("#pStrV").textContent = "62%";
+  $("#pRad").value = 7;  $("#pRadV").textContent = "7px";
+  $("#pTex").value = 38; $("#pTexV").textContent = "38%";
+  $("#pEdge").value = 20; $("#pEdgeV").textContent = "20";
+  applyPortraitPreview();
+};
+
+// Face guide: a box with four marks on the eyes, nose and mouth.
+// Not a face detector. A detector needs model weights downloaded at runtime, and
+// this page runs offline. Auto-fit finds the largest skin-coloured blob, the
+// marks start at standard proportions, and the user drags them into place.
+const face = {
+  on:false, limit:true, protect:true,
+  box:{x:0,y:0,w:0,h:0},
+  eyeL:{x:0,y:0}, eyeR:{x:0,y:0}, nose:{x:0,y:0}, mouth:{x:0,y:0},
+  size:{ eyeL:1, eyeR:1, nose:1, mouth:1 },     // each mark scales on its own
+  mask:null, maskKey:""
+};
+const MARKS = ["eyeL","eyeR","nose","mouth"];
+const MARK_BASE = { eyeL:[0.40,0.26], eyeR:[0.40,0.26], nose:[0.22,0.18], mouth:[0.52,0.30] };
+function markRadii(id){
+  const E = faceSeparation(), b = MARK_BASE[id], s = face.size[id];
+  return { rx: E*b[0]*s, ry: E*b[1]*s };
+}
+// Keep the marks inside the rectangle.
+function clampMarks(){
+  const b = face.box;
+  for(const id of MARKS){
+    face[id].x = clamp(face[id].x, b.x, b.x+b.w);
+    face[id].y = clamp(face[id].y, b.y, b.y+b.h);
+  }
+}
+function faceDefaults(box){
+  face.box = {...box};
+  const cx = box.x + box.w/2;
+  face.eyeL  = { x: cx - box.w*0.21, y: box.y + box.h*0.36 };
+  face.eyeR  = { x: cx + box.w*0.21, y: box.y + box.h*0.36 };
+  face.nose  = { x: cx,              y: box.y + box.h*0.58 };
+  face.mouth = { x: cx,              y: box.y + box.h*0.76 };
+  face.size  = { eyeL:1, eyeR:1, nose:1, mouth:1 };
+  face.mask = null;
+  syncMarkSliders();
+}
+function faceSeparation(){
+  return Math.max(12, Math.hypot(face.eyeR.x-face.eyeL.x, face.eyeR.y-face.eyeL.y));
+}
+// Zones are derived from the marks, so moving a mark moves its zone.
+function faceZones(){
+  const E = faceSeparation(), b = face.box;
+  const cx = (face.eyeL.x+face.eyeR.x)/2, eyeY = (face.eyeL.y+face.eyeR.y)/2;
+  const midFace = (face.nose.y + face.mouth.y)/2;
+  const brow = Math.max(10, eyeY - b.y);
+  const jaw  = Math.max(10, (b.y+b.h) - face.mouth.y);
+  return {
+    forehead: [{cx, cy: b.y + brow*0.46, rx: E*1.02, ry: brow*0.40}],
+    undereye: [{cx: face.eyeL.x, cy: face.eyeL.y + E*0.30, rx: E*0.44, ry: E*0.21},
+               {cx: face.eyeR.x, cy: face.eyeR.y + E*0.30, rx: E*0.44, ry: E*0.21}],
+    cheeks:   [{cx: face.eyeL.x - E*0.16, cy: midFace, rx: E*0.48, ry: E*0.46},
+               {cx: face.eyeR.x + E*0.16, cy: midFace, rx: E*0.48, ry: E*0.46}],
+    folds:    [{cx: face.nose.x - E*0.44, cy: midFace + E*0.10, rx: E*0.24, ry: E*0.40},
+               {cx: face.nose.x + E*0.44, cy: midFace + E*0.10, rx: E*0.24, ry: E*0.40}],
+    chin:     [{cx, cy: face.mouth.y + jaw*0.52, rx: E*0.62, ry: jaw*0.44}],
+    all:      [{cx: b.x+b.w/2, cy: b.y+b.h/2, rx: b.w/2, ry: b.h/2}]
+  };
+}
+// Build the mask of where retouching is allowed. White = allowed. Features are
+// punched out and the result blurred, so strokes fade at a feature edge.
+function faceMask(){
+  if(!face.on || (!face.limit && !face.protect)) return null;
+  const key = JSON.stringify([face.box, face.eyeL, face.eyeR, face.nose, face.mouth,
+                              face.size, face.limit, face.protect, doc.w, doc.h]);
+  if(face.mask && face.maskKey === key) return face.mask;
+  const c = el("canvas"); c.width = doc.w; c.height = doc.h;
+  const x = c.getContext("2d", {willReadFrequently:true});
+  const b = face.box, E = faceSeparation();
+  x.fillStyle = "#fff";
+  if(face.limit){
+    x.beginPath(); x.ellipse(b.x+b.w/2, b.y+b.h/2, b.w/2, b.h/2, 0, 0, Math.PI*2); x.fill();
+  } else {
+    x.fillRect(0,0,doc.w,doc.h);
+  }
+  if(face.protect){
+    x.globalCompositeOperation = "destination-out";
+    x.fillStyle = "#fff";
+    for(const id of MARKS){
+      const {rx, ry} = markRadii(id);
+      x.beginPath(); x.ellipse(face[id].x, face[id].y, rx, ry, 0, 0, Math.PI*2); x.fill();
+    }
+    x.globalCompositeOperation = "source-over";
+  }
+  const f = el("canvas"); f.width = doc.w; f.height = doc.h;
+  const fx = f.getContext("2d", {willReadFrequently:true});
+  fx.filter = "blur("+Math.max(2, E*0.05)+"px)";
+  fx.drawImage(c,0,0);
+  fx.filter = "none";
+  const d = fx.getImageData(0,0,doc.w,doc.h).data;
+  const m = new Uint8Array(doc.w*doc.h);
+  for(let p=0;p<m.length;p++) m[p] = d[p*4+3];
+  face.mask = m; face.maskKey = key;
+  return m;
+}
+function autoFitFace(){
+  const l = active(); if(!l) return toast("No layer to measure");
+  const S = 4, w = Math.ceil(doc.w/S), h = Math.ceil(doc.h/S);
+  const c = el("canvas"); c.width = w; c.height = h;
+  const x = c.getContext("2d", {willReadFrequently:true});
+  x.drawImage(l.cv, 0,0, doc.w,doc.h, 0,0, w,h);
+  const d = x.getImageData(0,0,w,h).data;
+  const skin = new Uint8Array(w*h);
+  for(let p=0;p<w*h;p++){
+    const i = p*4;
+    if(d[i+3] > 24 && skinWeight(d[i],d[i+1],d[i+2]) > 0.5) skin[p] = 1;
+  }
+  // Largest connected run of skin pixels wins.
+  const seen = new Uint8Array(w*h);
+  let best = null;
+  for(let p0=0;p0<w*h;p0++){
+    if(!skin[p0] || seen[p0]) continue;
+    const st = [p0]; seen[p0] = 1;
+    let n = 0, minx = w, miny = h, maxx = -1, maxy = -1;
+    while(st.length){
+      const p = st.pop(); n++;
+      const px = p%w, py = (p-px)/w;
+      if(px<minx)minx=px; if(px>maxx)maxx=px;
+      if(py<miny)miny=py; if(py>maxy)maxy=py;
+      if(px>0   && skin[p-1] && !seen[p-1]){ seen[p-1]=1; st.push(p-1); }
+      if(px<w-1 && skin[p+1] && !seen[p+1]){ seen[p+1]=1; st.push(p+1); }
+      if(py>0   && skin[p-w] && !seen[p-w]){ seen[p-w]=1; st.push(p-w); }
+      if(py<h-1 && skin[p+w] && !seen[p+w]){ seen[p+w]=1; st.push(p+w); }
+    }
+    if(!best || n > best.n) best = {n, minx, miny, maxx, maxy};
+  }
+  if(!best || best.n < (w*h)*0.01) return toast("No skin-coloured area found — place the guide by hand");
+  const box = {
+    x: best.minx*S, y: best.miny*S,
+    w: (best.maxx-best.minx+1)*S, h: (best.maxy-best.miny+1)*S
+  };
+  faceDefaults(box);
+  face.on = true; syncFaceUI(); render();
+  toast("Guide fitted — now drag the marks onto the eyes, nose and mouth");
+}
+
+function marksCentre(){
+  let x = 0, y = 0;
+  for(const id of MARKS){ x += face[id].x; y += face[id].y; }
+  return { x: x/MARKS.length, y: y/MARKS.length };
+}
+const HANDLES = () => {
+  const b = face.box, c = marksCentre();
+  const h = [
+    {id:"nw", x:b.x,         y:b.y},
+    {id:"ne", x:b.x+b.w,     y:b.y},
+    {id:"sw", x:b.x,         y:b.y+b.h},
+    {id:"se", x:b.x+b.w,     y:b.y+b.h},
+    {id:"move",  x:b.x+b.w/2, y:b.y},
+    {id:"marks", x:c.x,       y:c.y}          // Drags all marks together.
+  ];
+  for(const id of MARKS){
+    h.push({id, x:face[id].x, y:face[id].y});
+    if(face.protect){
+      const {rx} = markRadii(id);
+      h.push({id:"size:"+id, x:face[id].x+rx, y:face[id].y});   // Resizes this mark.
+    }
+  }
+  return h;
+};
+function faceHit(p){
+  if(!face.on) return null;
+  const r = (COARSE ? 22 : 11)/scale;   // Fingers need a bigger target than a cursor.
+  let best = null, bd = r;
+  for(const h of HANDLES()){
+    const d = Math.hypot(p.x-h.x, p.y-h.y);
+    if(d <= bd){ bd = d; best = h; }
+  }
+  return best;
+}
+function drawGuide(ctx, sx, sy){
+  if(!face.on) return;
+  const b = face.box;
+  const X = v => sx + v*scale, Y = v => sy + v*scale;
+  ctx.save();
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6,4]);
+  ctx.strokeStyle = "rgba(224,137,74,.95)";
+  ctx.strokeRect(X(b.x), Y(b.y), b.w*scale, b.h*scale);
+  ctx.setLineDash([]);
+  if(face.limit){
+    ctx.strokeStyle = "rgba(224,137,74,.45)";
+    ctx.beginPath();
+    ctx.ellipse(X(b.x+b.w/2), Y(b.y+b.h/2), b.w/2*scale, b.h/2*scale, 0, 0, Math.PI*2);
+    ctx.stroke();
+  }
+  if(face.protect){
+    ctx.strokeStyle = "rgba(106,169,255,.75)";
+    ctx.setLineDash([3,3]);
+    for(const id of MARKS){
+      const {rx, ry} = markRadii(id);
+      ctx.beginPath();
+      ctx.ellipse(X(face[id].x), Y(face[id].y), rx*scale, ry*scale, 0, 0, Math.PI*2);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+  for(const h of HANDLES()){
+    const X0 = X(h.x), Y0 = Y(h.y);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "rgba(0,0,0,.65)";
+    if(h.id.startsWith("size:")){                 // Square: resizes one mark.
+      ctx.fillStyle = "#9fd0a8";
+      ctx.beginPath(); ctx.rect(X0-3.5, Y0-3.5, 7, 7); ctx.fill(); ctx.stroke();
+    } else if(h.id === "marks"){                  // Diamond: moves all marks.
+      ctx.fillStyle = "#e9e8e4";
+      ctx.beginPath();
+      ctx.moveTo(X0, Y0-6); ctx.lineTo(X0+6, Y0); ctx.lineTo(X0, Y0+6); ctx.lineTo(X0-6, Y0);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else {
+      const isMark = MARKS.includes(h.id);
+      ctx.fillStyle = isMark ? "#6aa9ff" : "#e0894a";
+      ctx.beginPath(); ctx.arc(X0, Y0, isMark ? 5.5 : 4.5, 0, Math.PI*2);
+      ctx.fill(); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+function moveHandle(id, p, start){
+  const b = face.box;
+  const shift = (dx,dy) => {
+    for(const k of ["eyeL","eyeR","nose","mouth"]){ face[k].x += dx; face[k].y += dy; }
+  };
+  if(id === "move"){
+    const dx = p.x-start.x, dy = p.y-start.y;
+    b.x += dx; b.y += dy; shift(dx,dy);
+  } else if(id === "marks"){
+    shift(p.x-start.x, p.y-start.y);
+    clampMarks();
+  } else if(id.startsWith("size:")){
+    const m = id.slice(5), E = faceSeparation();
+    const d = Math.hypot(p.x-face[m].x, p.y-face[m].y);
+    face.size[m] = clamp(d/(E*MARK_BASE[m][0]), 0.25, 4);
+    syncMarkSliders();
+  } else if(id.length === 2){
+    // Resize from the opposite corner, moving the marks proportionally.
+    const ox = id[1]==="w" ? b.x+b.w : b.x;
+    const oy = id[0]==="n" ? b.y+b.h : b.y;
+    const nx = Math.min(ox, p.x), ny = Math.min(oy, p.y);
+    const nw = Math.max(24, Math.abs(p.x-ox)), nh = Math.max(24, Math.abs(p.y-oy));
+    const kx = nw/b.w, ky = nh/b.h;
+    for(const k of ["eyeL","eyeR","nose","mouth"]){
+      face[k].x = nx + (face[k].x - b.x)*kx;
+      face[k].y = ny + (face[k].y - b.y)*ky;
+    }
+    b.x = nx; b.y = ny; b.w = nw; b.h = nh;
+  } else {
+    face[id].x = p.x; face[id].y = p.y;
+    clampMarks();
+  }
+  face.mask = null;
+}
+// Each zone uses the operation that fits it. Heal rebuilds shading from the ring
+// around the brush: right for a crease, wrong for a whole cheek, where the
+// overlapping patches blotch and darken. Broad zones smooth instead.
+const ZONE_OPS = {
+  forehead: {op:"heal",   dab:0.85, label:"Forehead"},
+  undereye: {op:"heal",   dab:0.95, label:"Under-eyes"},
+  folds:    {op:"heal",   dab:0.95, label:"Nose-to-mouth folds"},
+  cheeks:   {op:"smooth", dab:0.70, label:"Cheeks"},
+  chin:     {op:"smooth", dab:0.80, label:"Chin and jaw"},
+  all:      {op:"region",           label:"Whole face"}
+};
+function retouchZone(name){ return guard("Retouch", () => {
+  const l = active(); if(!l) return;
+  if(!face.on) return toast("Show the face guide first");
+  const zones = faceZones()[name], cfg = ZONE_OPS[name];
+  if(!zones || !cfg) return;
+  dropPreview();
+  const r = state.retouch, E = faceSeparation();
+
+  if(cfg.op === "region"){
+    // One smoothing pass over the guide; the mask keeps it off the features.
+    const b = face.box;
+    const rect = intersect(clipBox(b.x, b.y, b.w, b.h), {x:0,y:0,w:doc.w,h:doc.h});
+    if(rect.w < 2 || rect.h < 2) return toast("The guide is off the canvas");
+    const img = l.ctx.getImageData(rect.x, rect.y, rect.w, rect.h);
+    smoothRegion(l.cv, img, rect, {
+      strength: r.strength*0.8, radius: Math.max(2, E*0.055),
+      texture: r.texture, edge: r.threshold+6, skinOnly: true
+    });
+    l.ctx.putImageData(img, rect.x, rect.y);
+    touch(l);
+    return after(cfg.label + " retouched");
+  }
+
+  let dabs = 0;
+  for(const z of zones){
+    const size = Math.max(10, Math.min(z.rx, z.ry)*2*cfg.dab);
+    const opts = { mode:cfg.op, size, strength:r.strength, texture:r.texture,
+                   threshold:r.threshold, skinOnly:true };
+    const step = Math.max(5, size*0.45);
+    for(let y=z.cy-z.ry; y<=z.cy+z.ry; y+=step){
+      for(let x=z.cx-z.rx; x<=z.cx+z.rx; x+=step){
+        const nx = (x-z.cx)/z.rx, ny = (y-z.cy)/z.ry;
+        if(nx*nx + ny*ny > 1) continue;
+        retouchDab(l, x, y, opts);
+        dabs++;
+      }
+    }
+  }
+  if(!dabs) return toast("That zone is empty — check where the marks are");
+  touch(l);
+  after(cfg.label + " retouched");
+});}
+function syncFaceUI(){
+  $("#fToggle").textContent = face.on ? "Hide guide" : "Show guide";
+  $("#fToggle").classList.toggle("primary", !face.on);
+  $("#fHelp").textContent = face.on
+    ? "Drag the corners to fit the box, the top-centre dot to move it, and the four blue marks onto the eyes, nose and mouth."
+    : "Show the guide to mark the eyes, nose and mouth, then retouch one zone at a time.";
+}
+$("#fToggle").onclick = () => {
+  face.on = !face.on;
+  if(face.on && !face.box.w){
+    faceDefaults({ x:doc.w*0.28, y:doc.h*0.12, w:doc.w*0.44, h:doc.h*0.76 });
+  }
+  syncFaceUI(); render();
+};
+const MARK_SLIDERS = { eyeL:"mEyeL", eyeR:"mEyeR", nose:"mNose", mouth:"mMouth" };
+function syncMarkSliders(){
+  for(const id of MARKS){
+    const el2 = $("#"+MARK_SLIDERS[id]);
+    if(!el2) continue;
+    const v = Math.round(face.size[id]*100);
+    el2.value = v; $("#"+MARK_SLIDERS[id]+"V").textContent = v+"%";
+  }
+}
+for(const id of MARKS){
+  const r = $("#"+MARK_SLIDERS[id]);
+  r.addEventListener("input", () => {
+    face.size[id] = parseFloat(r.value)/100;
+    $("#"+MARK_SLIDERS[id]+"V").textContent = r.value+"%";
+    face.mask = null;
+    if(!face.on){ face.on = true; syncFaceUI(); }
+    render();
+  });
+}
+$("#fAuto").onclick = autoFitFace;
+$("#fReset").onclick = () => {
+  if(!face.box.w) return toast("Show the guide first");
+  faceDefaults(face.box); render(); toast("Marks reset to standard proportions");
+};
+segment("#fLimit", b => { face.limit = b.dataset.v==="1"; face.mask = null; render(); });
+segment("#fProtect", b => { face.protect = b.dataset.v==="1"; face.mask = null; render(); });
+document.querySelectorAll("[data-zone]").forEach(b => b.onclick = () => retouchZone(b.dataset.zone));
+
+// The retouch brush.
+function retouchDab(l, cx, cy, opts){
+  const r = Math.max(2, opts.size/2);
+  let box = clipBox(cx-r, cy-r, r*2, r*2);
+  if(selection) box = intersect(box, clipRect(selection));
+  if(box.w < 2 || box.h < 2) return;
+  const fm = faceMask();
+
+  if(opts.mode === "clone"){
+    if(!opts.src) return;
+    const t = el("canvas"); t.width = t.height = Math.ceil(r*2);
+    const x = t.getContext("2d");
+    x.drawImage(opts.cloneFrom, cx-r-opts.dx, cy-r-opts.dy, r*2, r*2, 0, 0, r*2, r*2);
+    const g = x.createRadialGradient(r,r,r*0.3, r,r,r);
+    g.addColorStop(0,"rgba(0,0,0,1)"); g.addColorStop(1,"rgba(0,0,0,0)");
+    x.globalCompositeOperation = "destination-in";
+    x.fillStyle = g; x.fillRect(0,0,r*2,r*2);
+    l.ctx.save();
+    if(selection){ l.ctx.beginPath(); l.ctx.rect(selection.x,selection.y,selection.w,selection.h); l.ctx.clip(); }
+    l.ctx.globalAlpha = opts.strength;
+    l.ctx.drawImage(t, cx-r, cy-r);
+    l.ctx.restore();
+    return;
+  }
+
+  const img = l.ctx.getImageData(box.x,box.y,box.w,box.h);
+  const d = img.data;
+  const blurR = Math.max(1, r*0.35);
+  const fine = regionBlur(l.cv, box, blurR);   // Local low frequency.
+  if(!fine) return;
+  const lo = fine.data;
+  const thr = Math.max(1, opts.threshold) * Math.max(1, blurR/6);
+
+  // Heal needs a field interpolated from the ring around the brush. That is
+  // what deletes the wrinkle instead of blurring it.
+  let ring = null;
+  if(opts.mode === "heal"){
+    const ringR = r*1.18;
+    const rb = clipBox(cx-ringR-3, cy-ringR-3, (ringR+3)*2, (ringR+3)*2);
+    const soft = regionBlur(l.cv, rb, Math.max(2, r*0.55));
+    if(soft){
+      ring = [];
+      const N = 40;
+      for(let k=0;k<N;k++){
+        const a = k/N*Math.PI*2;
+        const wx = cx+Math.cos(a)*ringR, wy = cy+Math.sin(a)*ringR;
+        const px = Math.round(wx)-rb.x, py = Math.round(wy)-rb.y;
+        if(px<0||py<0||px>=rb.w||py>=rb.h) continue;
+        const i = (py*rb.w+px)*4;
+        if(soft.data[i+3] < 8) continue;
+        ring.push({ x:wx, y:wy, r:soft.data[i], g:soft.data[i+1], b:soft.data[i+2] });
+      }
+      if(ring.length < 6) ring = null;
+    }
+  }
+
+  for(let y=0;y<box.h;y++){
+    const wy = box.y+y+0.5;
+    for(let x=0;x<box.w;x++){
+      const i = (y*box.w+x)*4;
+      if(d[i+3] < 4) continue;
+      const wx = box.x+x+0.5;
+      const dist = Math.hypot(wx-cx, wy-cy)/r;
+      if(dist >= 1) continue;
+      let w = opts.strength * (1-dist*dist);               // Soft falloff.
+      if(opts.skinOnly) w *= skinWeight(d[i],d[i+1],d[i+2]);
+      if(fm) w *= fm[(box.y+y)*doc.w + (box.x+x)]/255;     // Face guide.
+      if(w <= 0.004) continue;
+
+      const dR = d[i]-lo[i], dG = d[i+1]-lo[i+1], dB = d[i+2]-lo[i+2];
+      const mag = Math.abs(lum(dR,dG,dB));
+      if(opts.mode === "smooth" && mag > thr) w *= Math.max(0, 1-(mag-thr)/thr);
+      if(w <= 0.004) continue;
+
+      let tr, tg, tb;
+      if(ring){
+        // Inverse-distance interpolation of the surrounding skin.
+        let sw = 0, sr = 0, sg = 0, sb = 0;
+        for(const s of ring){
+          const dd = Math.max(1, (wx-s.x)*(wx-s.x) + (wy-s.y)*(wy-s.y));
+          const k = 1/(dd*dd);
+          sw += k; sr += s.r*k; sg += s.g*k; sb += s.b*k;
+        }
+        tr = sr/sw; tg = sg/sw; tb = sb/sw;
+      } else {
+        tr = lo[i]; tg = lo[i+1]; tb = lo[i+2];
+      }
+      // Put the pore texture back so the patch is not a plastic blob.
+      tr += dR*opts.texture; tg += dG*opts.texture; tb += dB*opts.texture;
+
+      d[i]   = clamp(d[i]   + w*(tr-d[i]),   0,255);
+      d[i+1] = clamp(d[i+1] + w*(tg-d[i+1]), 0,255);
+      d[i+2] = clamp(d[i+2] + w*(tb-d[i+2]), 0,255);
+    }
+  }
+  l.ctx.putImageData(img, box.x, box.y);
+}
+
+function retouchStroke(l, x0, y0, x1, y1, opts){
+  const step = Math.max(2, opts.size*0.22);
+  const dx = x1-x0, dy = y1-y0, dd = Math.hypot(dx,dy);
+  const n = Math.max(1, Math.ceil(dd/step));
+  for(let i=1;i<=n;i++) retouchDab(l, x0+dx*i/n, y0+dy*i/n, opts);
+  if(dd === 0) retouchDab(l, x0, y0, opts);
+}
+
+// Image ops
+function remapAll(nw, nh, draw){
+  for(const l of doc.layers){
+    const out = el("canvas"); out.width = nw; out.height = nh;
+    const c = out.getContext("2d",{willReadFrequently:true});
+    draw(c, l.cv);
+    l.cv = out; l.ctx = c; l.rev++;
+  }
+  doc.w = nw; doc.h = nh; sizeBuffers(); selection = null; flatDirty = true;
+}
+document.querySelectorAll("[data-img]").forEach(b => b.onclick = () => {
+  const op = b.dataset.img;
+  if(op==="flipH") remapAll(doc.w,doc.h,(c,src)=>{ c.translate(doc.w,0); c.scale(-1,1); c.drawImage(src,0,0); });
+  if(op==="flipV") remapAll(doc.w,doc.h,(c,src)=>{ c.translate(0,doc.h); c.scale(1,-1); c.drawImage(src,0,0); });
+  if(op==="rotCW") remapAll(doc.h,doc.w,(c,src)=>{ c.translate(doc.h,0); c.rotate(Math.PI/2); c.drawImage(src,0,0); });
+  syncDocFields(); fit(); after("Image "+op);
+});
+$("#btnCut").onclick = () => guard("Delete background", () => {
+  // Delete the background the app itself put there: the sample artboard, or the
+  // canvas New created. A placed photo and anything drawn on are never touched,
+  // so saving afterwards gives the picture and its edits on transparency.
+  const appLayers = doc.layers.filter(l => l.appBg);
+  if(!appLayers.length){
+    toast("No app background to delete. To cut a photo's own backdrop, use the eraser in Magic mode.");
+    return;
+  }
+  const keep = doc.layers.filter(l => !l.appBg);
+  if(!keep.length){
+    toast("That is the only layer — place or draw something first");
+    return;
+  }
+  doc.layers = keep;
+  doc.active = doc.layers.length - 1;
+
+  let msg = "Deleted " + appLayers.length + " app background layer" + (appLayers.length > 1 ? "s" : "");
+
+  // Trim to what is left, so the saved file is the picture and nothing else.
+  let bb = null;
+  for(const l of doc.layers){
+    if(!l.visible) continue;
+    const b = bounds(l.cv);
+    if(!b) continue;
+    bb = bb ? { x:Math.min(bb.x,b.x), y:Math.min(bb.y,b.y),
+                w:Math.max(bb.x+bb.w, b.x+b.w) - Math.min(bb.x,b.x),
+                h:Math.max(bb.y+bb.h, b.y+b.h) - Math.min(bb.y,b.y) } : b;
+  }
+  if(bb && (bb.w !== doc.w || bb.h !== doc.h)){
+    remapAll(bb.w, bb.h, (c,src) => c.drawImage(src, -bb.x, -bb.y));
+    syncDocFields(); fit();
+    msg += ", trimmed to " + bb.w + "x" + bb.h;
+  }
+  after(msg);
+});
+
+$("#btnCrop").onclick = () => guard("Crop", () => {
+  if(!selection || selection.w<2 || selection.h<2) return toast("Drag a selection with the M tool first");
+  const r = clipRect(selection);
+  remapAll(r.w, r.h, (c,src)=> c.drawImage(src, -r.x, -r.y));
+  syncDocFields(); fit(); after("Cropped");
+});
+$("#btnTrim").onclick = () => guard("Trim", () => {
+  let bb = null;
+  for(const l of doc.layers){ if(!l.visible) continue; const b = bounds(l.cv); if(!b) continue;
+    bb = bb ? {x:Math.min(bb.x,b.x), y:Math.min(bb.y,b.y),
+               w:Math.max(bb.x+bb.w,b.x+b.w)-Math.min(bb.x,b.x), h:Math.max(bb.y+bb.h,b.y+b.h)-Math.min(bb.y,b.y)} : b; }
+  if(!bb) return toast("Nothing to trim");
+  if(bb.w===doc.w && bb.h===doc.h) return toast("No transparent edges");
+  remapAll(bb.w, bb.h, (c,src)=> c.drawImage(src, -bb.x, -bb.y));
+  syncDocFields(); fit(); after("Trimmed");
+});
+$("#docResize").onclick = () => guard("Resize", () => {
+  const nw = clamp(+$("#docW").value|0,1,6000), nh = clamp(+$("#docH").value|0,1,6000);
+  remapAll(nw, nh, (c,src)=> c.drawImage(src,0,0));
+  syncDocFields(); fit(); after("Canvas resized");
+});
+$("#docScale").onclick = () => guard("Scale", () => {
+  const nw = clamp(+$("#docW").value|0,1,6000), nh = clamp(+$("#docH").value|0,1,6000);
+  remapAll(nw, nh, (c,src)=>{ c.imageSmoothingQuality="high"; c.drawImage(src,0,0,nw,nh); });
+  syncDocFields(); fit(); after("Image scaled");
+});
+function syncDocFields(){ $("#docW").value = doc.w; $("#docH").value = doc.h; }
+segment("#newBg", b => state.newBg = b.dataset.bg);
+segment("#impFresh", b => state.import.fresh = b.dataset.v==="1");
+segment("#impStrip", b => state.import.strip = b.dataset.v==="1");
+
+$("#btnNew").onclick = () => {
+  const nw = clamp(+$("#docW").value|0 || 960, 1, 6000), nh = clamp(+$("#docH").value|0 || 640, 1, 6000);
+  doc.w = nw; doc.h = nh; sizeBuffers();
+  const bg = makeLayer("Background");
+  if(state.newBg!=="transparent"){ bg.ctx.fillStyle = state.newBg==="white" ? "#ffffff" : state.color2; bg.ctx.fillRect(0,0,nw,nh); }
+  bg.appBg = true;
+  doc.layers = [bg]; doc.active = 0; selection = null;
+  hist = []; hpos = -1; dropPreview();
+  suggestSaveName("");
+  flatDirty = true; commit(); renderLayers(); syncDocFields(); fit(); toast("New "+nw+"×"+nh+" document");
+};
+
+// Placing images
+function placeImage(img, name){
+  let scaled = "";
+  if(state.import.fresh){
+    // Transparent canvas the size of the photo, nothing opaque behind it.
+    // Every layer, the three working buffers and each undo step cost w*h*4 bytes,
+    // so cap the total pixels. Phones get a lower cap than desktops.
+    const MAXPX = COARSE ? 12e6 : 30e6;
+    let w = img.width, h = img.height;
+    const over = Math.sqrt((w*h) / MAXPX);
+    if(over > 1){
+      w = Math.round(w/over); h = Math.round(h/over);
+      scaled = " — scaled to "+w+"x"+h+" to fit in memory";
+    }
+    doc.w = clamp(w, 1, 8000); doc.h = clamp(h, 1, 8000);
+    sizeBuffers();
+    const base = makeLayer("Background");
+    base.appBg = true;
+    doc.layers = [base];
+    doc.active = 0; selection = null;
+    hist = []; hpos = -1;
+    syncDocFields();
+  }
+  const l = makeLayer(name || "Image");
+  const s = Math.min(1, doc.w/img.width, doc.h/img.height);
+  const w = img.width*s, h = img.height*s;
+  l.ctx.drawImage(img, (doc.w-w)/2, (doc.h-h)/2, w, h);
+  doc.layers.push(l); doc.active = doc.layers.length-1;
+  l.rev++;
+
+  suggestSaveName(name);
+  let note = "Placed "+(name||"image")+scaled;
+  if(state.import.strip){
+    const e = state.eraser, W = doc.w, H = doc.h;
+    const seeds = [];
+    for(let x=0;x<W;x+=2){ seeds.push([x,0]); seeds.push([x,H-1]); }
+    for(let y=0;y<H;y+=2){ seeds.push([0,y]); seeds.push([W-1,y]); }
+    const mask = matchMask(l, seeds, e.tolerance, true);
+    if(mask){
+      let n = 0;
+      for(let p=0;p<mask.length;p++) n += mask[p];
+      if(n < W*H*0.97){ applyEraseMask(l, mask, e.feather); note += " — background stripped"; }
+      else note += " — background left alone, the tolerance would have erased it all";
+    } else {
+      note += " — no background found at the edges";
+    }
+  }
+  if(state.import.fresh) fit();
+  after(note);
+}
+// HEIC is the iPhone default and only Safari decodes it natively. The decoder is
+// a megabyte of asm.js, so load it only when a HEIC appears and only after the
+// browser has had a chance to open the file itself.
+const HEIC_DECODER = "vendor/heic2any.min.js";
+const isHeic = f => /image\/hei[cf]/i.test(f.type||"") || /\.(heic|heif)$/i.test(f.name||"");
+let heicLoader = null;
+function loadHeicDecoder(){
+  if(heicLoader) return heicLoader;
+  heicLoader = new Promise((res, rej) => {
+    if(window.heic2any) return res(window.heic2any);
+    const s = document.createElement("script");
+    s.src = HEIC_DECODER;
+    // Pin the CDN copy by hash so a compromised CDN cannot swap the code.
+    if(/^https:/.test(HEIC_DECODER)){ s.integrity = "sha384-OTofQ0MEeiSgh62havBcemCIK0gqj809wX6UA0uPISNMRnR6NZyCdGzX3SbLrgwL"; s.crossOrigin = "anonymous"; }
+    s.onload = () => window.heic2any ? res(window.heic2any) : rej(new Error("decoder loaded but did not register"));
+    s.onerror = () => rej(new Error("decoder could not be loaded"));
+    document.head.appendChild(s);
+  });
+  return heicLoader;
+}
+function blobToImage(blob){
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); res(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("decode failed")); };
+    img.src = url;
+  });
+}
+// Never let a decode hang the UI with no explanation.
+function withTimeout(promise, ms, msg){
+  let t;
+  return Promise.race([
+    promise.finally(() => clearTimeout(t)),
+    new Promise((_, rej) => { t = setTimeout(() => rej(new Error(msg)), ms); })
+  ]);
+}
+async function fileToImage(f){
+  try{ return await blobToImage(f); }          // Safari decodes HEIC itself.
+  catch(err){ if(!isHeic(f)) throw err; }
+  toast("Decoding "+f.name+" — this takes a moment");
+  const heic2any = await withTimeout(loadHeicDecoder(), 20000, "the decoder did not load");
+  const out = await withTimeout(
+    heic2any({ blob:f, toType:"image/png" }), 90000,
+    "decoding timed out, or the page's security policy blocked it");
+  return blobToImage(Array.isArray(out) ? out[0] : out);
+}
+async function readFiles(files){
+  for(const f of files){
+    if(!(f.type||"").startsWith("image/") && !isHeic(f)) continue;
+    try{
+      const img = await fileToImage(f);
+      placeImage(img, f.name.replace(/\.[^.]+$/,""));
+    }catch(err){
+      toast(isHeic(f)
+        ? "Couldn't decode "+f.name+" ("+err.message+")"
+        : "Could not read "+f.name);
+    }
+  }
+}
+$("#btnOpen").onclick = () => $("#fileIn").click();
+$("#fileIn").onchange = e => { readFiles(e.target.files); e.target.value = ""; };
+let dragDepth = 0;
+stage.addEventListener("dragenter", e => { e.preventDefault(); dragDepth++; $("#drop").hidden = false; });
+stage.addEventListener("dragover", e => e.preventDefault());
+stage.addEventListener("dragleave", () => { if(--dragDepth<=0){ dragDepth=0; $("#drop").hidden = true; } });
+stage.addEventListener("drop", e => {
+  e.preventDefault(); dragDepth = 0; $("#drop").hidden = true;
+  if(e.dataTransfer.files.length) readFiles(e.dataTransfer.files);
+});
+window.addEventListener("paste", e => {
+  const items = e.clipboardData && e.clipboardData.files;
+  if(items && items.length) readFiles(items);
+});
+
+// Export
+function composite(sc){
+  const out = el("canvas");
+  out.width = Math.max(1, Math.round(doc.w*sc)); out.height = Math.max(1, Math.round(doc.h*sc));
+  const c = out.getContext("2d");
+  c.imageSmoothingQuality = "high";
+  // PNG and WebP carry alpha; only JPEG needs a matte behind it.
+  if(state.exFmt === "jpeg"){ c.fillStyle = "#ffffff"; c.fillRect(0,0,out.width,out.height); }
+  c.drawImage(getFlat(), 0, 0, out.width, out.height);
+  return out;
+}
+// Which formats can this browser really write? canvas.toBlob does not fail on a
+// type it cannot encode, it returns a PNG instead. Probing once at startup stops
+// the editor saving PNG bytes under a .heic name.
+const FORMATS = [
+  ["png","PNG"], ["jpeg","JPEG"], ["webp","WebP"], ["avif","AVIF"], ["heic","HEIC"]
+];
+const EXT = { jpeg:"jpg" };
+const canEncode = {};
+async function probeFormats(){
+  const c = el("canvas"); c.width = c.height = 8;
+  c.getContext("2d").fillRect(0,0,8,8);
+  for(const [fmt] of FORMATS){
+    const type = "image/"+fmt;
+    const blob = await new Promise(r => c.toBlob(r, type, 0.9));
+    canEncode[fmt] = !!blob && blob.type === type;
+  }
+  const seg = $("#exFmt");
+  seg.innerHTML = FORMATS.filter(([f]) => canEncode[f])
+    .map(([f,label]) => '<button data-fmt="'+f+'" aria-pressed="'+(state.exFmt===f)+'">'+label+'</button>').join("");
+  if(!canEncode[state.exFmt]) state.exFmt = "png";
+  segment("#exFmt", b => {
+    state.exFmt = b.dataset.fmt;
+    $("#exQWrap").hidden = state.exFmt==="png";
+  });
+  if(!canEncode.heic){
+    $("#exHeic").textContent =
+      "HEIC opens here but cannot be saved: encoding it needs an HEVC encoder, which no browser ships. "+
+      "WebP is the closest small format an iPhone will open, and it keeps transparency.";
+  }
+}
+
+// The save name follows the photo that was opened, with a 1 on the end so the
+// original is never overwritten. Once the field is edited by hand, leave it alone.
+let exNameEdited = false;
+$("#exName").addEventListener("input", () => { exNameEdited = true; });
+function suggestSaveName(base){
+  if(exNameEdited) return;
+  if(!base){ $("#exName").value = "artwork"; return; }
+  const clean = String(base).replace(/[\\/:*?"<>|\x00-\x1f]/g, "-").trim().slice(0, 120);
+  if(!clean){ $("#exName").value = "artwork"; return; }
+  // "IMG_4821" + "1" would read as a different photo, so separate it.
+  $("#exName").value = /\d$/.test(clean) ? clean + "-1" : clean + "1";
+}
+
+segment("#exScale", b => state.exScale = parseFloat(b.dataset.s));
+$("#exQ").oninput = e => { state.exQ = e.target.value/100; $("#exQV").textContent = e.target.value; };
+$("#btnExport").onclick = () => {
+  const sec = $("#sectExport");
+  sec.dataset.open = "true";
+  sec.scrollIntoView({block:"nearest", behavior:"smooth"});
+  $("#exName").focus({preventScroll:true});
+};
+
+$("#exGo").onclick = async () => {
+  const btn = $("#exGo");
+  btn.disabled = true; btn.textContent = "Preparing\u2026";
+  try{
+    const out = composite(state.exScale);
+    const type = "image/"+state.exFmt;
+    const blob = await new Promise(res => out.toBlob(res, type, state.exFmt==="png"?undefined:state.exQ));
+    if(!blob) throw new Error("the browser could not encode that format");
+    const ext = state.exFmt==="jpeg" ? "jpg" : state.exFmt;
+    const name = ($("#exName").value.trim() || "artwork").replace(/\.[a-z0-9]+$/i,"") + "." + ext;
+    const url = URL.createObjectURL(blob);
+    const link = el("a", {href:url, download:name});
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast("Saved " + name + " (" + Math.round(blob.size/1024) + " KB)");
+  }catch(err){
+    toast("Couldn't export: " + (err && err.message ? err.message : "unknown error"));
+  }finally{ btn.disabled = false; btn.textContent = "Save file"; }
+};
+
+// Misc UI
+let toastT = 0;
+function toast(msg){
+  const t = $("#toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(toastT); toastT = setTimeout(()=>t.classList.remove("on"), 1900);
+}
+document.querySelectorAll(".secthead").forEach(h => h.onclick = () => {
+  const s = h.parentElement; s.dataset.open = s.dataset.open==="true" ? "false" : "true";
+});
+$("#cFore").oninput = e => setColor(e.target.value);
+$("#cBack").oninput = e => { state.color2 = e.target.value; e.target.parentElement.style.background = e.target.value; };
+$("#cSwap").onclick = () => { const a = state.color, b = state.color2;
+  setColor(b); state.color2 = a; $("#cBack").value = a; $("#cBack").parentElement.style.background = a; };
+$("#btnUndo").onclick = undo; $("#btnRedo").onclick = redo;
+$("#zIn").onclick = () => zoomAt(stage.clientWidth/2, stage.clientHeight/2, 1.25);
+$("#zOut").onclick = () => zoomAt(stage.clientWidth/2, stage.clientHeight/2, 0.8);
+$("#zFit").onclick = fit;
+$("#z100").onclick = () => { const k = 1/scale; zoomAt(stage.clientWidth/2, stage.clientHeight/2, k); };
+
+function syncStatus(){
+  $("#stDoc").textContent = doc.w+" × "+doc.h;
+  $("#stZoom").textContent = Math.round(scale*100)+"%";
+  const l = active();
+  $("#stLayer").textContent = l ? l.name : "—";
+  $("#stSel").textContent = selection ? "sel "+selection.w+"×"+selection.h+" @ "+selection.x+","+selection.y : "";
+}
+
+// Keyboard
+window.addEventListener("keydown", e => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+  if(e.code==="Space" && !typing){ spaceDown = true; if(!drag) view.style.cursor="grab"; e.preventDefault(); }
+  const mod = e.ctrlKey || e.metaKey;
+  if(mod && e.key.toLowerCase()==="z"){ e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if(mod && e.key.toLowerCase()==="y"){ e.preventDefault(); redo(); return; }
+  if(mod && e.key.toLowerCase()==="a"){ e.preventDefault(); selection={x:0,y:0,w:doc.w,h:doc.h}; kickAnts(); render(); syncStatus(); return; }
+  if(mod && e.key.toLowerCase()==="d"){ e.preventDefault(); selection=null; render(); syncStatus(); return; }
+  if(mod && e.key==="0"){ e.preventDefault(); fit(); return; }
+  if(typing) return;
+  if(e.key==="Delete" || e.key==="Backspace"){ e.preventDefault(); clearSelection(); return; }
+  if(e.key==="[" || e.key==="]"){
+    const s = state.tool==="eraser" ? state.eraser : state.tool==="retouch" ? state.retouch : state.brush;
+    const max = state.tool==="retouch" ? 250 : 400;
+    const d = Math.max(1, s.size*0.15) * (e.key==="]" ? 1 : -1);
+    s.size = clamp(s.size+d, state.tool==="retouch"?4:1, max);
+    buildToolPanel(); toast("Size "+Math.round(s.size));
+  }
+  if(e.key.toLowerCase()==="x"){ $("#cSwap").click(); }
+  if(e.key.startsWith("Arrow") && state.tool==="move"){
+    const l = active(); if(!l) return;
+    const d = e.shiftKey?10:1;
+    const dx = e.key==="ArrowLeft"?-d:e.key==="ArrowRight"?d:0;
+    const dy = e.key==="ArrowUp"?-d:e.key==="ArrowDown"?d:0;
+    const src = el("canvas"); src.width=doc.w; src.height=doc.h; src.getContext("2d").drawImage(l.cv,0,0);
+    l.ctx.clearRect(0,0,doc.w,doc.h); l.ctx.drawImage(src,dx,dy);
+    touch(l); after(); e.preventDefault(); return;
+  }
+  const t = TOOLS.find(t => t.key.toLowerCase()===e.key.toLowerCase());
+  if(t) setTool(t.id);
+});
+window.addEventListener("keyup", e => {
+  if(e.code==="Space"){ spaceDown = false; if(!drag) view.style.cursor = state.tool==="pan"?"grab":"crosshair"; }
+});
+
+// Sample doc
+function seed(){
+  sizeBuffers();
+  const bg = makeLayer("Backdrop");
+  const g = bg.ctx.createLinearGradient(0,0,doc.w,doc.h);
+  g.addColorStop(0,"#1d2733"); g.addColorStop(0.55,"#2f3b45"); g.addColorStop(1,"#4a3a32");
+  bg.ctx.fillStyle = g; bg.ctx.fillRect(0,0,doc.w,doc.h);
+
+  const sun = makeLayer("Sun");
+  const rg = sun.ctx.createRadialGradient(690,210,10,690,210,230);
+  rg.addColorStop(0,"rgba(224,137,74,1)"); rg.addColorStop(0.45,"rgba(224,137,74,.55)"); rg.addColorStop(1,"rgba(224,137,74,0)");
+  sun.ctx.fillStyle = rg; sun.ctx.fillRect(420,0,540,440);
+  sun.blend = "screen";
+
+  const ridge = makeLayer("Ridge");
+  ridge.ctx.fillStyle = "#121a21";
+  ridge.ctx.beginPath(); ridge.ctx.moveTo(0,640);
+  const pts = [[0,470],[130,392],[240,436],[360,330],[470,420],[590,352],[700,430],[820,368],[960,448]];
+  ridge.ctx.moveTo(0,640); ridge.ctx.lineTo(0,470);
+  for(const [x,y] of pts) ridge.ctx.lineTo(x,y);
+  ridge.ctx.lineTo(960,640); ridge.ctx.closePath(); ridge.ctx.fill();
+
+  const label = makeLayer("Label");
+  label.ctx.fillStyle = "#e9e8e4";
+  label.ctx.font = "700 76px 'Archivo', sans-serif";
+  label.ctx.fillText("Raster Editor", 64, 90);
+  label.ctx.fillStyle = "#e0894a";
+  label.ctx.font = "500 20px 'IBM Plex Mono', monospace";
+  label.ctx.fillText("open a photo or paint over this — nothing leaves your device", 66, 186);
+  label.ctx.fillStyle = "#e0894a";
+  label.ctx.fillRect(66, 148, 300, 4);
+
+  for(const l of [bg, sun, ridge, label]) l.appBg = true;   // the app's own backdrop
+  doc.layers = [bg, sun, ridge, label];
+  doc.active = doc.layers.length-1;
+  flatDirty = true;
+}
+
+// Boot
+window.addEventListener("error", e => {
+  toast("Something went wrong: " + ((e.error && e.error.message) || e.message || "unknown error"));
+});
+window.addEventListener("unhandledrejection", e => {
+  const r = e.reason;
+  toast("Something went wrong: " + ((r && (r.message || r.code)) || "unknown error"));
+});
+
+function boot(){
+  // On a phone the inspector is a long scroll, so start with most of it folded.
+  if(window.innerWidth <= 760){
+    for(const id of ["sectFace","sectPortrait"]) $("#"+id).dataset.open = "false";
+    document.querySelectorAll(".sect").forEach(s => {
+      const h = s.querySelector(".secthead h2");
+      if(h && /Adjustments|Document|Export|Shortcuts/.test(h.textContent)) s.dataset.open = "false";
+    });
+  }
+  $("#hint").textContent = COARSE
+    ? "Pinch to zoom, two fingers to pan"
+    : "Scroll to zoom · space or middle-drag to pan";
+  seed(); syncDocFields(); renderLayers(); setTool("brush"); syncFaceUI(); syncPorHint(); probeFormats();
+  commit(); fit(); syncStatus(); syncHistBtns();
+  setTimeout(()=>{ $("#hint").style.opacity="0"; }, 6000);
+}
+const ro = new ResizeObserver(() => { render(); });
+ro.observe(stage);
+window.addEventListener("resize", () => { dpr = Math.min(window.devicePixelRatio||1,2); render(); });
+document.addEventListener("visibilitychange", () => { if(!document.hidden) kickAnts(); });
+
+function safeBoot(){
+  try{ boot(); }
+  catch(err){
+    document.body.insertAdjacentHTML("afterbegin",
+      '<p style="padding:16px;color:#d9674f;font:14px system-ui">Raster Editor could not start: '
+      + esc(err && err.message || err) + '</p>');
+  }
+}
+if(document.fonts && document.fonts.ready){
+  document.fonts.ready.then(safeBoot, safeBoot);   // bad font load must not block the app
+} else safeBoot();
+
+})();
+</script>
+
+</body>
+</html>

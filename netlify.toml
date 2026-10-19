@@ -1,0 +1,28 @@
+# Static site, no build step. Netlify serves this folder as-is.
+[build]
+  publish = "."
+  command = ""
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
+    X-Frame-Options = "DENY"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), interest-cohort=(), usb=(), payment=()"
+    # connect-src 'none' means the browser blocks every outbound request, so images
+    # cannot leave the visitor's machine. Everything the page needs is served from
+    # this origin: no CDN, no font host, no analytics.
+    # blob: is for the HEIC decoder, which runs in a Worker made from a blob URL.
+    # 'unsafe-eval' is also for the decoder: libheif is compiled to asm.js, which
+    # the browser refuses to run without it. The page takes no input that reaches
+    # eval, and connect-src 'none' means nothing it produced could be sent anywhere,
+    # so this buys HEIC support without opening an exfiltration path. Drop both the
+    # decoder and this directive if you do not need iPhone photos.
+    Content-Security-Policy = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src 'self' blob:; child-src 'self' blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'"
+
+# Fonts and the decoder never change, so let browsers keep them.
+[[headers]]
+  for = "/vendor/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
